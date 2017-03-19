@@ -116,6 +116,9 @@ set(CERES_INTERNAL_SRC
     visibility.cc
     visibility_based_preconditioner.cc
     wall_time.cc
+
+    gauss_helmert_problem_impl.cc
+    constraint_block.cc
 )
 
 # Also depend on the header files so that they appear in IDEs.
@@ -345,6 +348,7 @@ if (BUILD_TESTING AND GFLAGS)
   ceres_test(single_linkage_clustering)
   ceres_test(small_blas)
   ceres_test(solver)
+  ceres_test(gauss_helmert_problem)
 
   # TODO(sameeragarwal): This test should ultimately be made
   # independent of SuiteSparse.
