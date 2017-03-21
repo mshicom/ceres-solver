@@ -188,6 +188,138 @@ struct VariadicEvaluate<Functor, T, ceres::DYNAMIC, ceres::DYNAMIC,
   }
 };
 
+#define CERE_SELECT_INPUT(i) (i < k2Start)? input_1[i]:input_2[i]
+template<typename Functor, typename T, int k2Start, int N0, int N1, int N2, int N3, int N4,
+         int N5, int N6, int N7, int N8, int N9>
+struct VariadicEvaluate2 {
+  static bool Call(const Functor& functor, T const *const *input_1, T const *const *input_2, T* output) {
+    return functor(CERE_SELECT_INPUT(0),
+                   CERE_SELECT_INPUT(1),
+                   CERE_SELECT_INPUT(2),
+                   CERE_SELECT_INPUT(3),
+                   CERE_SELECT_INPUT(4),
+                   CERE_SELECT_INPUT(5),
+                   CERE_SELECT_INPUT(6),
+                   CERE_SELECT_INPUT(7),
+                   CERE_SELECT_INPUT(8),
+                   CERE_SELECT_INPUT(9),
+                   output);
+  }
+};
+
+template<typename Functor, typename T, int k2Start, int N0, int N1, int N2, int N3, int N4,
+         int N5, int N6, int N7, int N8>
+struct VariadicEvaluate2<Functor, T, k2Start, N0, N1, N2, N3, N4, N5, N6, N7, N8, 0> {
+  static bool Call(const Functor& functor, T const *const *input_1, T const *const *input_2, T* output) {
+    return functor(CERE_SELECT_INPUT(0),
+                   CERE_SELECT_INPUT(1),
+                   CERE_SELECT_INPUT(2),
+                   CERE_SELECT_INPUT(3),
+                   CERE_SELECT_INPUT(4),
+                   CERE_SELECT_INPUT(5),
+                   CERE_SELECT_INPUT(6),
+                   CERE_SELECT_INPUT(7),
+                   CERE_SELECT_INPUT(8),
+                   output);
+  }
+};
+
+template<typename Functor, typename T, int k2Start, int N0, int N1, int N2, int N3, int N4,
+         int N5, int N6, int N7>
+struct VariadicEvaluate2<Functor, T, k2Start, N0, N1, N2, N3, N4, N5, N6, N7, 0, 0> {
+  static bool Call(const Functor& functor, T const *const *input_1, T const *const *input_2, T* output) {
+    return functor(CERE_SELECT_INPUT(0),
+                   CERE_SELECT_INPUT(1),
+                   CERE_SELECT_INPUT(2),
+                   CERE_SELECT_INPUT(3),
+                   CERE_SELECT_INPUT(4),
+                   CERE_SELECT_INPUT(5),
+                   CERE_SELECT_INPUT(6),
+                   CERE_SELECT_INPUT(7),
+                   output);
+  }
+};
+
+template<typename Functor, typename T, int k2Start, int N0, int N1, int N2, int N3, int N4,
+         int N5, int N6>
+struct VariadicEvaluate2<Functor, T, k2Start, N0, N1, N2, N3, N4, N5, N6, 0, 0, 0> {
+  static bool Call(const Functor& functor, T const *const *input_1, T const *const *input_2, T* output) {
+    return functor(CERE_SELECT_INPUT(0),
+                   CERE_SELECT_INPUT(1),
+                   CERE_SELECT_INPUT(2),
+                   CERE_SELECT_INPUT(3),
+                   CERE_SELECT_INPUT(4),
+                   CERE_SELECT_INPUT(5),
+                   CERE_SELECT_INPUT(6),
+                   output);
+  }
+};
+
+template<typename Functor, typename T, int k2Start, int N0, int N1, int N2, int N3, int N4,
+         int N5>
+struct VariadicEvaluate2<Functor, T, k2Start, N0, N1, N2, N3, N4, N5, 0, 0, 0, 0> {
+  static bool Call(const Functor& functor, T const *const *input_1, T const *const *input_2, T* output) {
+    return functor(CERE_SELECT_INPUT(0),
+                   CERE_SELECT_INPUT(1),
+                   CERE_SELECT_INPUT(2),
+                   CERE_SELECT_INPUT(3),
+                   CERE_SELECT_INPUT(4),
+                   CERE_SELECT_INPUT(5),
+                   output);
+  }
+};
+
+template<typename Functor, typename T, int k2Start, int N0, int N1, int N2, int N3, int N4>
+struct VariadicEvaluate2<Functor, T, k2Start, N0, N1, N2, N3, N4, 0, 0, 0, 0, 0> {
+  static bool Call(const Functor& functor, T const *const *input_1, T const *const *input_2, T* output) {
+    return functor(CERE_SELECT_INPUT(0),
+                   CERE_SELECT_INPUT(1),
+                   CERE_SELECT_INPUT(2),
+                   CERE_SELECT_INPUT(3),
+                   CERE_SELECT_INPUT(4),
+                   output);
+  }
+};
+
+template<typename Functor, typename T, int k2Start, int N0, int N1, int N2, int N3>
+struct VariadicEvaluate2<Functor, T, k2Start, N0, N1, N2, N3, 0, 0, 0, 0, 0, 0> {
+  static bool Call(const Functor& functor, T const *const *input_1, T const *const *input_2, T* output) {
+    return functor(CERE_SELECT_INPUT(0),
+                   CERE_SELECT_INPUT(1),
+                   CERE_SELECT_INPUT(2),
+                   CERE_SELECT_INPUT(3),
+                   output);
+  }
+};
+
+template<typename Functor, typename T, int k2Start, int N0, int N1, int N2>
+struct VariadicEvaluate2<Functor, T, k2Start, N0, N1, N2, 0, 0, 0, 0, 0, 0, 0> {
+  static bool Call(const Functor& functor, T const *const *input_1, T const *const *input_2, T* output) {
+    return functor(CERE_SELECT_INPUT(0),
+                   CERE_SELECT_INPUT(1),
+                   CERE_SELECT_INPUT(2),
+                   output);
+  }
+};
+
+template<typename Functor, typename T, int k2Start, int N0, int N1>
+struct VariadicEvaluate2<Functor, T, k2Start, N0, N1, 0, 0, 0, 0, 0, 0, 0, 0> {
+  static bool Call(const Functor& functor, T const *const *input_1, T const *const *input_2, T* output) {
+    return functor(CERE_SELECT_INPUT(0),
+                   CERE_SELECT_INPUT(1),
+                   output);
+  }
+};
+
+template<typename Functor, typename T, int k2Start, int N0>
+struct VariadicEvaluate2<Functor, T, k2Start, N0, 0, 0, 0, 0, 0, 0, 0, 0, 0> {
+  static bool Call(const Functor& functor, T const *const *input_1, T const *const *input_2, T* output) {
+    return functor(CERE_SELECT_INPUT(0),
+                   output);
+  }
+};
+#undef CERE_SELECT_INPUT
+
 }  // namespace internal
 }  // namespace ceres
 

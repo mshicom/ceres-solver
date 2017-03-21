@@ -311,6 +311,129 @@ struct AutoDiff {
   }
 };
 
+// This is in a struct because default template parameters on a
+// function are not supported in C++03 (though it is available in
+// C++0x). N0 through N5 are the dimension of the input arguments to
+// the user supplied functor.
+template <typename Functor, typename T, int k2Start,
+          int N0 = 0, int N1 = 0, int N2 = 0, int N3 = 0, int N4 = 0,
+          int N5 = 0, int N6 = 0, int N7 = 0, int N8 = 0, int N9 = 0>
+struct AutoDiff2 {
+  static bool Differentiate(const Functor& functor,
+                            T const *const *parameters_1,
+                            T const *const *parameters_2,
+                            int num_outputs,
+                            T *function_value,
+                            T **jacobians_1,
+                            T **jacobians_2) {
+    // This block breaks the 80 column rule to keep it somewhat readable.
+    DCHECK_GT(num_outputs, 0);
+    DCHECK((!N1 && !N2 && !N3 && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||
+           ((N1 > 0) && !N2 && !N3 && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||
+           ((N1 > 0) && (N2 > 0) && !N3 && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||                                   // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||                              // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && !N5 && !N6 && !N7 && !N8 && !N9) ||                         // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && !N6 && !N7 && !N8 && !N9) ||                    // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && !N7 && !N8 && !N9) ||               // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && (N7 > 0) && !N8 && !N9) ||          // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && (N7 > 0) && (N8 > 0) && !N9) ||     // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && (N7 > 0) && (N8 > 0) && (N9 > 0)))  // NOLINT
+        << "Zero block cannot precede a non-zero block. Block sizes are "
+        << "(ignore trailing 0s): " << N0 << ", " << N1 << ", " << N2 << ", "
+        << N3 << ", " << N4 << ", " << N5 << ", " << N6 << ", " << N7 << ", "
+        << N8 << ", " << N9;
+
+    typedef Jet<T, N0 + N1 + N2 + N3 + N4 + N5 + N6 + N7 + N8 + N9> JetT;
+    FixedArray<JetT, (256 * 7) / sizeof(JetT)> x(
+        N0 + N1 + N2 + N3 + N4 + N5 + N6 + N7 + N8 + N9 + num_outputs);
+
+    // These are the positions of the respective jets in the fixed array x.
+    const int jet0  = 0;
+    const int jet1  = N0;
+    const int jet2  = N0 + N1;
+    const int jet3  = N0 + N1 + N2;
+    const int jet4  = N0 + N1 + N2 + N3;
+    const int jet5  = N0 + N1 + N2 + N3 + N4;
+    const int jet6  = N0 + N1 + N2 + N3 + N4 + N5;
+    const int jet7  = N0 + N1 + N2 + N3 + N4 + N5 + N6;
+    const int jet8  = N0 + N1 + N2 + N3 + N4 + N5 + N6 + N7;
+    const int jet9  = N0 + N1 + N2 + N3 + N4 + N5 + N6 + N7 + N8;
+
+    const JetT *unpacked_parameters[10] = {
+        x.get() + jet0,
+        x.get() + jet1,
+        x.get() + jet2,
+        x.get() + jet3,
+        x.get() + jet4,
+        x.get() + jet5,
+        x.get() + jet6,
+        x.get() + jet7,
+        x.get() + jet8,
+        x.get() + jet9,
+    };
+
+    JetT* output = x.get() + N0 + N1 + N2 + N3 + N4 + N5 + N6 + N7 + N8 + N9;
+
+#define CERES_MAKE_1ST_ORDER_PERTURBATION(i)                            \
+    if (N ## i) {                                                       \
+      internal::Make1stOrderPerturbation<JetT, T, N ## i>(              \
+          jet ## i,                                                     \
+          (i<k2Start)? parameters_1[i]:parameters_2[i-k2Start],           \
+          x.get() + jet ## i);                                          \
+    }
+    CERES_MAKE_1ST_ORDER_PERTURBATION(0);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(1);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(2);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(3);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(4);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(5);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(6);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(7);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(8);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(9);
+#undef CERES_MAKE_1ST_ORDER_PERTURBATION
+
+    if (!VariadicEvaluate<Functor, JetT,
+                          N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>::Call(
+        functor, unpacked_parameters, output)) {
+      return false;
+    }
+
+    internal::Take0thOrderPart(num_outputs, output, function_value);
+
+#define CERES_TAKE_1ST_ORDER_PERTURBATION(i)                   \
+    if (N ## i) {                                              \
+      if (i<k2Start) {                                         \
+         if (jacobians_1!=NULL)                                \
+           internal::Take1stOrderPart<JetT, T,                 \
+                                      jet ## i,                \
+                                      N ## i>(num_outputs,     \
+                                              output,          \
+                                              jacobians_1[i]); \
+      } else {                                                 \
+         if (jacobians_2!=NULL)                                \
+           internal::Take1stOrderPart<JetT, T,                 \
+                                      jet ## i,                \
+                                      N ## i>(num_outputs,     \
+                                              output,          \
+                                              jacobians_2[i-k2Start]);\
+      }\
+    }
+    CERES_TAKE_1ST_ORDER_PERTURBATION(0);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(1);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(2);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(3);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(4);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(5);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(6);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(7);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(8);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(9);
+#undef CERES_TAKE_1ST_ORDER_PERTURBATION
+    return true;
+  }
+};
+
 }  // namespace internal
 }  // namespace ceres
 

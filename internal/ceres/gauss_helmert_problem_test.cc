@@ -28,6 +28,7 @@
 //
 // Author: kaihong.huang11@google.com (Kaihong Huang)
 
+#include "ceres/autodiff_gauss_helmert_constraint_function.h"
 #include "ceres/gauss_helmert_constraint_function.h"
 #include "ceres/gauss_helmert_problem_impl.h"
 #include "ceres/problem.h"
@@ -49,6 +50,8 @@
 #include "ceres/types.h"
 #include "gtest/gtest.h"
 
+#include "eigen3/Eigen/Eigen"
+
 namespace ceres {
 namespace internal {
 
@@ -64,7 +67,9 @@ class EqualityConstraintFunction : public GaussHelmertConstraintFunction {
   }
   virtual ~EqualityConstraintFunction() {}
 
-  virtual bool Evaluate(double const* const* parameters, double const* const* observations, double* residuals,
+  virtual bool Evaluate(double const* const* parameters,    //
+                        double const* const* observations,  //
+                        double* residuals,                  //
                         double** jacobians_x, double** jacobians_l) const {
     for (int i = 0; i < num_residuals(); ++i) {
       residuals[i] = 1;
@@ -72,6 +77,52 @@ class EqualityConstraintFunction : public GaussHelmertConstraintFunction {
     return true;
   }
 };
+
+struct EqualityConstraintFunctor {
+  template <typename T>
+  bool operator()(T const X[4], T const L[4], T cost[4]) const {
+    for (size_t i = 0; i < 4; i++)
+      cost[i] = X[i] - L[i];
+    return true;
+  }
+
+  static GaussHelmertConstraintFunction* create() {
+    return new AutoDiffGaussHelmertConstraintFunction<EqualityConstraintFunctor, 4, 1, 4, 4>(
+        new EqualityConstraintFunctor());
+  }
+};
+
+TEST(GHProblem, AutoDiffGaussHelmertConstraintFunction) {
+  double x[4] = {0, 0, 0, 0};
+  double l[4] = {1, 2, 3, 4};
+  double err[4];
+
+  double a[4][4];
+  double* jacobians_x[4] = {a[0], a[1], a[2], a[3]};
+  Eigen::Map<Eigen::Matrix4d> A(&a[0][0]);
+
+  double b[4][4];
+  double* jacobians_l[4] = {b[0], b[1], b[2], b[3]};
+  Eigen::Map<Eigen::Matrix4d> B(&b[0][0]);
+
+  double* parameters[1] = {x};
+  double* observations[1] = {l};
+
+  GaussHelmertConstraintFunction* constraint_function = EqualityConstraintFunctor::create();
+
+  constraint_function->Evaluate(parameters, observations, err, jacobians_x, NULL);
+  std::cout << A << std::endl;
+
+  constraint_function->Evaluate(parameters, observations, err, NULL, jacobians_l);
+  std::cout << B << std::endl;
+
+  std::cout << Eigen::Map<Eigen::Vector4d>(err) << std::endl;
+
+  constraint_function->Evaluate(parameters, observations, err, jacobians_x, jacobians_l);
+
+  EXPECT_TRUE(A.isApprox(Eigen::Matrix4d::Identity(), 1e-4));
+  EXPECT_TRUE(B.isApprox(-Eigen::Matrix4d::Identity(), 1e-4));
+}
 
 TEST(GHProblem, dev) {
   GaussHelmertProblemImpl problem;

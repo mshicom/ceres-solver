@@ -114,7 +114,7 @@ class CERES_EXPORT GaussHelmertConstraintFunction {
                         double const* const* observations,
                         double* residuals,
                         double** jacobians_x,
-                        double** jacobians_y) const = 0;
+                        double** jacobians_l) const = 0;
 
   const std::vector<int32>& parameter_block_sizes() const {
     return parameter_block_sizes_;
