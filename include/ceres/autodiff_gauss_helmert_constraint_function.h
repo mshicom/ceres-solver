@@ -204,10 +204,10 @@ class AutoDiffGaussHelmertConstraintFunction : public SizedGaussHelmertConstrain
   virtual bool Evaluate(double const* const* parameters,
                         double const* const* observations,
                         double* residuals,
-                        double** jacobians_x,
-                        double** jacobians_l) const {
+                        double** jacobians_p,
+                        double** jacobians_o) const {
 
-    if (jacobians_x == NULL && jacobians_l== NULL ) { // no Jacobians needed
+    if (jacobians_p == NULL && jacobians_o== NULL ) { // no Jacobians needed
       return internal::VariadicEvaluate2<
           CostFunctor, double, kObservationStart, N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>
           ::Call(*functor_, parameters, observations, residuals);
@@ -220,7 +220,7 @@ class AutoDiffGaussHelmertConstraintFunction : public SizedGaussHelmertConstrain
                                  N0, N1, N2, N3, N4,
                                  N5, N6, N7, N8, N9>::num_residuals(),
                residuals,
-               jacobians_x, jacobians_l);
+               jacobians_p, jacobians_o);
     return sucess;
   }
 

@@ -142,8 +142,8 @@ ConstraintBlock::ConstraintBlock(const GaussHelmertConstraintFunction* constrain
   std::copy(observation_blocks.begin(), observation_blocks.end(), observation_blocks_.get());
 }
 
-bool ConstraintBlock::Evaluate(bool apply_loss_function, double* cost, double* residuals, double** jacobians_x,
-                               double** jacobians_l, double* scratch) const {
+bool ConstraintBlock::Evaluate(bool apply_loss_function, double* cost, double* residuals, double** jacobians_p,
+                               double** jacobians_o, double* scratch) const {
   const int num_parameter_blocks = NumParameterBlocks();
   const int num_residuals = constraint_function_->num_residuals();
 #if 0
@@ -156,14 +156,14 @@ bool ConstraintBlock::Evaluate(bool apply_loss_function, double* cost, double* r
 
   // Put pointers into the scratch space into global_jacobians as appropriate.
   FixedArray<double*, 8> global_jacobians(num_parameter_blocks);
-  if (jacobians_x != NULL) {
+  if (jacobians_p != NULL) {
     for (int i = 0; i < num_parameter_blocks; ++i) {
       const ParameterBlock* parameter_block = parameter_blocks_[i];
-      if (jacobians_x[i] != NULL && parameter_block->LocalParameterizationJacobian() != NULL) {
+      if (jacobians_p[i] != NULL && parameter_block->LocalParameterizationJacobian() != NULL) {
         global_jacobians[i] = scratch;
         scratch += num_residuals * parameter_block->Size();
       } else {
-        global_jacobians[i] = jacobians_x[i];
+        global_jacobians[i] = jacobians_p[i];
       }
     }
   }
@@ -177,7 +177,7 @@ bool ConstraintBlock::Evaluate(bool apply_loss_function, double* cost, double* r
   // Invalidate the evaluation buffers so that we can check them after
   // the CostFunction::Evaluate call, to see if all the return values
   // that were required were written to and that they are finite.
-  double** eval_jacobians = (jacobians_x != NULL) ? global_jacobians.get() : NULL;
+  double** eval_jacobians = (jacobians_p != NULL) ? global_jacobians.get() : NULL;
 
   InvalidateEvaluation(*this, cost, residuals, eval_jacobians);
 

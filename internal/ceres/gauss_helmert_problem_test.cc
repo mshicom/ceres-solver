@@ -70,7 +70,7 @@ class EqualityConstraintFunction : public GaussHelmertConstraintFunction {
   virtual bool Evaluate(double const* const* parameters,    //
                         double const* const* observations,  //
                         double* residuals,                  //
-                        double** jacobians_x, double** jacobians_l) const {
+                        double** jacobians_p, double** jacobians_o) const {
     for (int i = 0; i < num_residuals(); ++i) {
       residuals[i] = 1;
     }
@@ -98,11 +98,11 @@ TEST(GHProblem, AutoDiffGaussHelmertConstraintFunction) {
   double err[4];
 
   double a[4][4];
-  double* jacobians_x[4] = {a[0], a[1], a[2], a[3]};
+  double* jacobians_p[4] = {a[0], a[1], a[2], a[3]};
   Eigen::Map<Eigen::Matrix4d> A(&a[0][0]);
 
   double b[4][4];
-  double* jacobians_l[4] = {b[0], b[1], b[2], b[3]};
+  double* jacobians_o[4] = {b[0], b[1], b[2], b[3]};
   Eigen::Map<Eigen::Matrix4d> B(&b[0][0]);
 
   double* parameters[1] = {x};
@@ -110,30 +110,30 @@ TEST(GHProblem, AutoDiffGaussHelmertConstraintFunction) {
 
   GaussHelmertConstraintFunction* constraint_function = EqualityConstraintFunctor::create();
 
-  constraint_function->Evaluate(parameters, observations, err, jacobians_x, NULL);
+  constraint_function->Evaluate(parameters, observations, err, jacobians_p, NULL);
   std::cout << A << std::endl;
 
-  constraint_function->Evaluate(parameters, observations, err, NULL, jacobians_l);
+  constraint_function->Evaluate(parameters, observations, err, NULL, jacobians_o);
   std::cout << B << std::endl;
 
   std::cout << Eigen::Map<Eigen::Vector4d>(err) << std::endl;
 
-  constraint_function->Evaluate(parameters, observations, err, jacobians_x, jacobians_l);
+  constraint_function->Evaluate(parameters, observations, err, jacobians_p, jacobians_o);
 
   EXPECT_TRUE(A.isApprox(Eigen::Matrix4d::Identity(), 1e-4));
   EXPECT_TRUE(B.isApprox(-Eigen::Matrix4d::Identity(), 1e-4));
 }
 
-TEST(GHProblem, dev) {
-  GaussHelmertProblemImpl problem;
-  double x = 0;
-  double l = 1;
-  std::vector<double*> parameters;
-  parameters.push_back(&x);
-  std::vector<double*> observations;
-  observations.push_back(&l);
-  problem.AddConstraintBlock(new EqualityConstraintFunction(1, 1, 1), NULL, parameters, observations);
-}
+//TEST(GHProblem, dev) {
+//  GaussHelmertProblemImpl problem;
+//  double x = 0;
+//  double l = 1;
+//  std::vector<double*> parameters;
+//  parameters.push_back(&x);
+//  std::vector<double*> observations;
+//  observations.push_back(&l);
+//  problem.AddConstraintBlock(new EqualityConstraintFunction(1, 1, 1), NULL, parameters, observations);
+//}
 
 }  // namespace internal
 }  // namespace ceres

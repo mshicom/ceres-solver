@@ -100,7 +100,7 @@ class ConstraintBlock {
   // the application of the loss function on and off.
   bool Evaluate(bool apply_loss_function,
                 double* cost, double* residuals,
-                double** jacobians_x, double** jacobians_l,
+                double** jacobians_p, double** jacobians_o,
                 double* scratch) const;
 
   const GaussHelmertConstraintFunction* constraint_function() const { return constraint_function_; }
