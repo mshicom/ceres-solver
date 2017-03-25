@@ -52,6 +52,9 @@
 
 #include "eigen3/Eigen/Eigen"
 
+#include "ceres/GH_parameter_block.h"
+#include "ceres/GH_program.h"
+
 namespace ceres {
 namespace internal {
 
@@ -92,7 +95,8 @@ struct EqualityConstraintFunctor {
   }
 };
 
-TEST(GHProblem, AutoDiffGaussHelmertConstraintFunction) {
+TEST(GHProblem, AutoDiffGaussHelmertConstraintFunction)
+{
   double x[4] = {0, 0, 0, 0};
   double l[4] = {1, 2, 3, 4};
   double err[4];
@@ -124,6 +128,13 @@ TEST(GHProblem, AutoDiffGaussHelmertConstraintFunction) {
   EXPECT_TRUE(B.isApprox(-Eigen::Matrix4d::Identity(), 1e-4));
 }
 
+TEST(GHPROBLEM, GHProgram)
+{
+    GHProgram p;
+
+
+
+}
 //TEST(GHProblem, dev) {
 //  GaussHelmertProblemImpl problem;
 //  double x = 0;

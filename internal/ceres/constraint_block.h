@@ -42,15 +42,15 @@
 #include "ceres/stringprintf.h"
 #include "ceres/types.h"
 #include "ceres/gauss_helmert_constraint_function.h"
-
+#include "ceres/GH_parameter_block.h"
 namespace ceres {
 
 class LossFunction;
 
 namespace internal {
 
-class ParameterBlock;
-class ObservationBlock;
+class GHParameterBlock;
+class GHObservationBlock;
 
 // A term in the least squares problem. The mathematical form of each term in
 // the overall least-squares cost function is:
@@ -65,39 +65,17 @@ class ObservationBlock;
 //
 // The residual block stores pointers to but does not own the cost functions,
 // loss functions, and parameter blocks.
-class ConstraintBlock {
+class GHConstraintBlock {
  public:
   // Construct the constraint block with the given cost/loss functions. Loss may
   // be null. The index is the index of the residual block in the Program's
   // residual_blocks array.
-  ConstraintBlock(const GaussHelmertConstraintFunction* constraint_function,
+  GHConstraintBlock(const GaussHelmertConstraintFunction* constraint_function,
                   const LossFunction* loss_function,
-                  const std::vector<ParameterBlock*>& parameter_blocks,
-                  const std::vector<ObservationBlock*>& observation_blocks,
+                  const std::vector<GHParameterBlock*>& parameter_blocks,
+                  const std::vector<GHObservationBlock*>& observation_blocks,
                   int index);
 
-  // Evaluates the residual term, storing the scalar cost in *cost, the residual
-  // components in *residuals, and the jacobians between the parameters and
-  // residuals in jacobians[i], in row-major order. If residuals is NULL, the
-  // residuals are not computed. If jacobians is NULL, no jacobians are
-  // computed. If jacobians[i] is NULL, then the jacobian for that parameter is
-  // not computed.
-  //
-  // Evaluate needs scratch space which must be supplied by the caller via
-  // scratch. The array should have at least NumScratchDoublesForEvaluate()
-  // space available.
-  //
-  // The return value indicates the success or failure. If the function returns
-  // false, the caller should expect the the output memory locations to have
-  // been modified.
-  //
-  // The returned cost and jacobians have had robustification and local
-  // parameterizations applied already; for example, the jacobian for a
-  // 4-dimensional quaternion parameter using the "QuaternionParameterization"
-  // is num_residuals by 3 instead of num_residuals by 4.
-  //
-  // apply_loss_function as the name implies allows the user to switch
-  // the application of the loss function on and off.
   bool Evaluate(bool apply_loss_function,
                 double* cost, double* residuals,
                 double** jacobians_p, double** jacobians_o,
@@ -108,14 +86,14 @@ class ConstraintBlock {
 
   // Access the parameter blocks for this residual. The array has size
   // NumParameterBlocks().
-  ParameterBlock* const* parameter_blocks() const { return parameter_blocks_.get(); }
+  GHParameterBlock* const* parameter_blocks() const { return parameter_blocks_.get(); }
 
   // Number of variable blocks that this residual term depends on.
   int NumParameterBlocks() const { return constraint_function_->parameter_block_sizes().size(); }
 
   // Access the parameter blocks for this residual. The array has size
   // NumParameterBlocks().
-  ObservationBlock* const* observation_blocks() const { return observation_blocks_.get(); }
+  GHObservationBlock* const* observation_blocks() const { return observation_blocks_.get(); }
 
   // Number of variable blocks that this residual term depends on.
   int NumObservationBlocks() const { return constraint_function_->observation_block_sizes().size(); }
@@ -135,8 +113,8 @@ class ConstraintBlock {
  private:
   const GaussHelmertConstraintFunction* constraint_function_;
   const LossFunction* loss_function_;
-  scoped_array<ParameterBlock*> parameter_blocks_;
-  scoped_array<ObservationBlock*> observation_blocks_;
+  scoped_array<GHParameterBlock*> parameter_blocks_;
+  scoped_array<GHObservationBlock*> observation_blocks_;
 
   // The index of the residual, typically in a Program. This is only to permit
   // switching from a ResidualBlock* to an index in the Program's array, needed

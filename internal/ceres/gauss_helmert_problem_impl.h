@@ -47,7 +47,10 @@
 #include "ceres/internal/macros.h"
 #include "ceres/internal/port.h"
 #include "ceres/internal/scoped_ptr.h"
-#include "ceres/parameter_block.h"
+#include "ceres/GH_parameter_block.h"
+#include "ceres/constraint_block.h"
+#include "ceres/GH_program.h"
+
 #include "ceres/problem.h"
 #include "ceres/types.h"
 
@@ -60,10 +63,10 @@ struct CRSMatrix;
 
 namespace internal {
 
-class Program;
-class ConstraintBlock;
+class GHProgram;
+class GHConstraintBlock;
+class GHParameterBlock;
 
-class ObservationBlock : public ParameterBlock {};
 
 class GaussHelmertProblemImpl {
  public:

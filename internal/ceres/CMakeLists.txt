@@ -117,8 +117,9 @@ set(CERES_INTERNAL_SRC
     visibility_based_preconditioner.cc
     wall_time.cc
 
-    gauss_helmert_problem_impl.cc
+    #gauss_helmert_problem_impl.cc
     constraint_block.cc
+    GH_program.cc
 )
 
 # Also depend on the header files so that they appear in IDEs.
