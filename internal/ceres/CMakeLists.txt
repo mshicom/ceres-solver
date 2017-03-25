@@ -120,6 +120,12 @@ set(CERES_INTERNAL_SRC
     #gauss_helmert_problem_impl.cc
     constraint_block.cc
     GH_program.cc
+    GH_evaluator.cc
+#    GH_problem.cc
+    GH_scratch_evaluate_preparer.cc
+    GH_block_evaluate_preparer.cc
+    GH_block_jacobian_writer.cc
+
 )
 
 # Also depend on the header files so that they appear in IDEs.

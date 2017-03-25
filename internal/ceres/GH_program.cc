@@ -470,9 +470,9 @@ bool GHProgram::RemoveFixedBlocks(vector<double*>* removed_parameter_blocks,
   }
   observation_blocks_.resize(num_active_observation_blocks);
 
-  if (!(((NumResidualBlocks() == 0) &&
+  if (!(((NumConstraintBlocks() == 0) &&
          (NumParameterBlocks() == 0)) ||
-        ((NumResidualBlocks() != 0) &&
+        ((NumConstraintBlocks() != 0) &&
          (NumParameterBlocks() != 0)))) {
     *error =  "Congratulations, you found a bug in Ceres. Please report it.";
     return false;
@@ -508,8 +508,8 @@ TripletSparseMatrix* GHProgram::CreateJacobianBlockSparsityTranspose() const {
   // Matrix to store the block sparsity structure of the Jacobian.
   TripletSparseMatrix* tsm =
       new TripletSparseMatrix(NumParameterBlocks(),
-                              NumResidualBlocks(),
-                              10 * NumResidualBlocks());
+                              NumConstraintBlocks(),
+                              10 * NumConstraintBlocks());
   int num_nonzeros = 0;
   int* rows = tsm->mutable_rows();
   int* cols = tsm->mutable_cols();
@@ -547,7 +547,7 @@ TripletSparseMatrix* GHProgram::CreateJacobianBlockSparsityTranspose() const {
   return tsm;
 }
 
-int GHProgram::NumResidualBlocks() const {
+int GHProgram::NumConstraintBlocks() const {
   return constraint_blocks_.size();
 }
 int GHProgram::NumParameterBlocks() const {
@@ -607,8 +607,8 @@ int GHProgram::MaxScratchDoublesNeededForEvaluate() const {
   return max_scratch_bytes_for_evaluate;
 }
 
-// TODO: does observation derivatives need to be here?
-int GHProgram::MaxDerivativesPerResidualBlock() const {
+
+int GHProgram::MaxDerivativesPerConstraintBlock() const {
   int max_derivatives = 0;
   for (int i = 0; i < constraint_blocks_.size(); ++i) {
     int derivatives = 0;
@@ -618,12 +618,17 @@ int GHProgram::MaxDerivativesPerResidualBlock() const {
       derivatives += constraint_block->NumResiduals() *
                      constraint_block->parameter_blocks()[j]->LocalSize();
     }
+    int num_observations = constraint_block->NumObservationBlocks();
+    for (int j = 0; j < num_observations; ++j) {
+      derivatives += constraint_block->NumResiduals() *
+                     constraint_block->observation_blocks()[j]->LocalSize();
+    }
     max_derivatives = max(max_derivatives, derivatives);
   }
   return max_derivatives;
 }
 
-int GHProgram::MaxParametersPerResidualBlock() const {
+int GHProgram::MaxParametersPerConstraintBlock() const {
   int max_parameters = 0;
   for (int i = 0; i < constraint_blocks_.size(); ++i) {
     max_parameters = max(max_parameters,
@@ -632,7 +637,16 @@ int GHProgram::MaxParametersPerResidualBlock() const {
   return max_parameters;
 }
 
-int GHProgram::MaxResidualsPerResidualBlock() const {
+int GHProgram::MaxObservationsPerConstraintBlock() const {
+  int max_observations = 0;
+  for (int i = 0; i < constraint_blocks_.size(); ++i) {
+    max_observations = max(max_observations,
+                         constraint_blocks_[i]->NumObservationBlocks());
+  }
+  return max_observations;
+}
+
+int GHProgram::MaxResidualsPerConstraintBlock() const {
   int max_residuals = 0;
   for (int i = 0; i < constraint_blocks_.size(); ++i) {
     max_residuals = max(max_residuals, constraint_blocks_[i]->NumResiduals());

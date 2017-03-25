@@ -161,13 +161,15 @@ class GHProgram {
   int NumObservationBlocks() const;
   int NumObservations() const;
   int NumEffectiveObservations() const;
-  int NumResidualBlocks() const;
+  int NumConstraintBlocks() const;
   int NumResiduals() const;
 
   int MaxScratchDoublesNeededForEvaluate() const;
-  int MaxDerivativesPerResidualBlock() const;
-  int MaxParametersPerResidualBlock() const;
-  int MaxResidualsPerResidualBlock() const;
+  int MaxDerivativesPerConstraintBlock() const;
+  int MaxParametersPerConstraintBlock() const;
+  int MaxObservationsPerConstraintBlock() const;
+
+  int MaxResidualsPerConstraintBlock() const;
 
   // A human-readable dump of the parameter blocks for debugging.
   // TODO(keir): If necessary, also dump the residual blocks.
@@ -190,10 +192,9 @@ class GHProgram {
                          std::string* message);
 
   // The Program does not own the ParameterBlock or ResidualBlock objects.
-  std::vector<GHParameterBlock*> parameter_blocks_;
+  std::vector<GHParameterBlock*  > parameter_blocks_;
   std::vector<GHObservationBlock*> observation_blocks_;
-
-  std::vector<GHConstraintBlock*> constraint_blocks_;
+  std::vector<GHConstraintBlock* > constraint_blocks_;
 
   friend class GHProblem;
 };

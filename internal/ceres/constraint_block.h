@@ -76,6 +76,33 @@ class GHConstraintBlock {
                   const std::vector<GHObservationBlock*>& observation_blocks,
                   int index);
 
+  // Evaluates the residual term, storing the scalar cost in *cost, the residual
+  // components in *residuals, and the jacobians between the parameters and
+  // residuals in jacobians[i], in row-major order. If residuals is NULL, the
+  // residuals are not computed. If jacobians is NULL, no jacobians are
+  // computed. If jacobians[i] is NULL, then the jacobian for that parameter is
+  // not computed.
+  //
+  // Evaluate needs scratch space which must be supplied by the caller via
+  // scratch. The array should have at least NumScratchDoublesForEvaluate()
+  // space available. Use scratch space are to store the full-sized
+  // jacobians. For parameters that have no local parameterization  no storage
+  // is needed and the passed-in jacobian array is used directly. Also include
+  // space to store the residuals, which is needed for cost-only evaluations.
+  // This is slightly pessimistic, since both won't be needed all the time, but
+  // the amount of excess should not cause problems for the caller.
+  //
+  // The return value indicates the success or failure. If the function returns
+  // false, the caller should expect the the output memory locations to have
+  // been modified.
+  //
+  // The returned cost and jacobians have had robustification and local
+  // parameterizations applied already; for example, the jacobian for a
+  // 4-dimensional quaternion parameter using the "QuaternionParameterization"
+  // is num_residuals by 3 instead of num_residuals by 4.
+  //
+  // apply_loss_function as the name implies allows the user to switch
+  // the application of the loss function on and off.
   bool Evaluate(bool apply_loss_function,
                 double* cost, double* residuals,
                 double** jacobians_p, double** jacobians_o,
