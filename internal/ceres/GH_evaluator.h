@@ -140,7 +140,7 @@ class GHEvaluator{
   // state is an array of size NumParameters(), cost is a pointer to a single
   // double, and residuals is an array of doubles of size NumResiduals().
   virtual bool Evaluate(const EvaluateOptions& evaluate_options,
-                        const double* state,
+                        const double* state_p, const double* state_o,
                         double* cost,
                         double* residuals,
                         double* gradient_p, double* gradient_o,
@@ -149,13 +149,13 @@ class GHEvaluator{
   // Variant of Evaluator::Evaluate where the user wishes to use the
   // default EvaluateOptions struct. This is mostly here as a
   // convenience method.
-  bool Evaluate(const double* state,
+  bool Evaluate(const double* state_p, const double* state_o,
                 double* cost,
                 double* residuals,
                 double* gradient_p, double* gradient_o,
                 SparseMatrix* jacobian_p, SparseMatrix* jacobian_o) {
     return Evaluate(EvaluateOptions(),
-                    state,
+                    state_p, state_o,
                     cost,
                     residuals,
                     gradient_p, gradient_o,

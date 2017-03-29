@@ -30,7 +30,6 @@
 
 #include "ceres/autodiff_gauss_helmert_constraint_function.h"
 #include "ceres/gauss_helmert_constraint_function.h"
-#include "ceres/gauss_helmert_problem_impl.h"
 #include "ceres/problem.h"
 #include "ceres/problem_impl.h"
 
@@ -53,11 +52,15 @@
 #include "eigen3/Eigen/Eigen"
 
 #include "ceres/GH_parameter_block.h"
+#include "ceres/constraint_block.h"
 #include "ceres/GH_program.h"
+#include "ceres/GH_problem.h"
+#include "ceres/GH_program_evaluator.h"
+#include "ceres/compressed_row_sparse_matrix.h"
 
 namespace ceres {
-namespace internal {
 
+using namespace ceres::internal;
 using std::vector;
 
 // Trivial constraint function that accepts one single argument and one single observation.
@@ -99,7 +102,7 @@ TEST(GHProblem, AutoDiffGaussHelmertConstraintFunction)
 {
   double x[4] = {0, 0, 0, 0};
   double l[4] = {1, 2, 3, 4};
-  double err[4];
+  double residuals[4];
 
   double a[4][4];
   double* jacobians_p[4] = {a[0], a[1], a[2], a[3]};
@@ -114,27 +117,128 @@ TEST(GHProblem, AutoDiffGaussHelmertConstraintFunction)
 
   GaussHelmertConstraintFunction* constraint_function = EqualityConstraintFunctor::create();
 
-  constraint_function->Evaluate(parameters, observations, err, jacobians_p, NULL);
+  constraint_function->Evaluate(parameters, observations, residuals, jacobians_p, NULL);
   std::cout << A << std::endl;
 
-  constraint_function->Evaluate(parameters, observations, err, NULL, jacobians_o);
+  constraint_function->Evaluate(parameters, observations, residuals, NULL, jacobians_o);
   std::cout << B << std::endl;
 
-  std::cout << Eigen::Map<Eigen::Vector4d>(err) << std::endl;
+  std::cout << ConstVectorRef(residuals, 4) << std::endl;
 
-  constraint_function->Evaluate(parameters, observations, err, jacobians_p, jacobians_o);
+  constraint_function->Evaluate(parameters, observations, residuals, jacobians_p, jacobians_o);
 
   EXPECT_TRUE(A.isApprox(Eigen::Matrix4d::Identity(), 1e-4));
   EXPECT_TRUE(B.isApprox(-Eigen::Matrix4d::Identity(), 1e-4));
 }
 
-TEST(GHPROBLEM, GHProgram)
+TEST(GHPROBLEM, GHConstraintBlock)
 {
-    GHProgram p;
+    double x[4] = {0, 0, 0, 0};
+    double l[4] = {1, 2, 3, 4};
+    double residuals[4];
+    double cost[1];
 
+    GHParameterBlock   p0(x,3,0);
+    GHObservationBlock o0(l,4,0);
+
+    std::vector<GHParameterBlock*> p;
+    p.push_back(&p0);
+
+    std::vector<GHObservationBlock*> o;
+    o.push_back(&o0);
+
+    GHConstraintBlock block(EqualityConstraintFunctor::create(), NULL, p, o, 0);
+    EXPECT_EQ(block.NumObservationBlocks(),  1);
+    EXPECT_EQ(block.NumParameterBlocks(),  1);
+    EXPECT_EQ(block.NumResiduals(),  4);
+    EXPECT_EQ(block.NumScratchDoublesForEvaluate(),4);
+    double a[4][4];
+    double* jacobians_p[4] = {a[0], a[1], a[2], a[3]};
+    Eigen::Map<Eigen::Matrix4d> A(&a[0][0]);
+
+    double b[4][4];
+    double* jacobians_o[4] = {b[0], b[1], b[2], b[3]};
+    Eigen::Map<Eigen::Matrix4d> B(&b[0][0]);
+    double* scratch = new double[block.NumScratchDoublesForEvaluate()];
+
+    block.Evaluate(false, cost, residuals, jacobians_p, jacobians_o, scratch);
+    std::cout << cost[0] << std::endl;
+    std::cout << ConstVectorRef(residuals, 4) << std::endl;
+    std::cout << A << std::endl;
+    std::cout << B << std::endl;
+    delete[] scratch;
+}
+
+TEST(GHPROBLEM, GHProgramEvaluator)
+{
+    double x[4] = {0, 0, 0, 0};
+    double l[4] = {1, 2, 3, 4};
+    double residuals[4];
+    double cost[1];
+
+    GHParameterBlock   p0(x,3,0);
+    GHObservationBlock o0(l,4,0);
+
+    std::vector<GHParameterBlock*> p;
+    p.push_back(&p0);
+
+    std::vector<GHObservationBlock*> o;
+    o.push_back(&o0);
+
+    GHConstraintBlock block(EqualityConstraintFunctor::create(), NULL, p, o, 0);
+    EXPECT_EQ(block.NumObservationBlocks(),  1);
+    EXPECT_EQ(block.NumParameterBlocks(),  1);
+    EXPECT_EQ(block.NumResiduals(),  4);
+    EXPECT_EQ(block.NumScratchDoublesForEvaluate(),4);
+    double a[4][4];
+    double* jacobians_p[4] = {a[0], a[1], a[2], a[3]};
+    Eigen::Map<Eigen::Matrix4d> A(&a[0][0]);
+
+    double b[4][4];
+    double* jacobians_o[4] = {b[0], b[1], b[2], b[3]};
+    Eigen::Map<Eigen::Matrix4d> B(&b[0][0]);
+    double* scratch = new double[block.NumScratchDoublesForEvaluate()];
+
+    block.Evaluate(false, cost, residuals, jacobians_p, jacobians_o, scratch);
+    std::cout << cost[0] << std::endl;
+    std::cout << ConstVectorRef(residuals, 4) << std::endl;
+    std::cout << A << std::endl;
+    std::cout << B << std::endl;
+    delete[] scratch;
+
+}
+
+TEST(GHProblem, GHProblem){
+
+    double x[4] = {0, 0, 0, 0};
+    double l[4] = {1, 2, 3, 4};
+
+    std::vector<double*> p;
+    p.push_back(x);
+
+    std::vector<double*> o;
+    o.push_back(l);
+
+    GHProblem problem;
+    problem.AddConstraintBlock(EqualityConstraintFunctor::create(),NULL, p, o);
+
+    double residuals[4];
+    double cost;
+    std::vector<double> residual, gradient_p, gradient_o;
+    CRSMatrix A,B;
+    Matrix crsm_dense;
+
+    problem.Evaluate(GHProblem::EvaluateOptions(),
+                     &cost, &residual,
+                     &gradient_p, &gradient_o,
+                     &A, &B);
+    std::cout << cost << std::endl;
+    A;
+    B;
 
 
 }
+
 //TEST(GHProblem, dev) {
 //  GaussHelmertProblemImpl problem;
 //  double x = 0;
@@ -146,5 +250,5 @@ TEST(GHPROBLEM, GHProgram)
 //  problem.AddConstraintBlock(new EqualityConstraintFunction(1, 1, 1), NULL, parameters, observations);
 //}
 
-}  // namespace internal
+
 }  // namespace ceres

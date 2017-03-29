@@ -65,8 +65,8 @@ class GHScratchEvaluatePreparer {
  private:
   // Scratch space for the jacobians; each jacobian is packed one after another.
   // There is enough scratch to hold all the jacobians for the largest residual.
-  scoped_array<double> jacobian_scratch_;
-  scoped_array<double> jacobian_obs_scratch_;
+  scoped_array<double> jacobian_p_scratch_;
+  scoped_array<double> jacobian_o_scratch_;
 
 };
 

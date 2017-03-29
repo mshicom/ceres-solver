@@ -121,7 +121,7 @@ set(CERES_INTERNAL_SRC
     constraint_block.cc
     GH_program.cc
     GH_evaluator.cc
-#    GH_problem.cc
+    GH_problem.cc
     GH_scratch_evaluate_preparer.cc
     GH_block_evaluate_preparer.cc
     GH_block_jacobian_writer.cc

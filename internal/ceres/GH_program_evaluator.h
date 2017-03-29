@@ -142,7 +142,7 @@ class GHProgramEvaluator : public GHEvaluator {
   }
 
   bool Evaluate(const GHEvaluator::EvaluateOptions& evaluate_options,
-                const double* state,
+                const double* state_p, const double* state_o,
                 double* cost,
                 double* residuals,
                 double* gradient_p, double* gradient_o,
@@ -154,8 +154,8 @@ class GHProgramEvaluator : public GHEvaluator {
                                          &execution_summary_);
 
     // The parameters are stateful, so set the state before evaluating.
-    if (!program_->StateVectorToParameterBlocks(state) ||
-        !program_->StateVectorToObservationBlocks(state)    ) {
+    if (!program_->StateVectorToParameterBlocks(state_p) ||
+        !program_->StateVectorToObservationBlocks(state_o)    ) {
       return false;
     }
 
@@ -209,9 +209,9 @@ class GHProgramEvaluator : public GHEvaluator {
       double* block_residuals = NULL;
       if (residuals != NULL) {
         block_residuals = residuals + residual_layout_[i];
-      } else if (gradient_p != NULL) {
+      } else if (gradient_p != NULL) {  // for the calculation of gradient_p
         block_residuals = scratch->constraint_block_residuals.get();
-      }
+      } // else block_residuals = NULL;
 
       // Prepare block jacobians if requested.
       double** block_jacobians_p = NULL;
@@ -257,6 +257,13 @@ class GHProgramEvaluator : public GHEvaluator {
                                jacobian_p);
       }
 
+      if (jacobian_o != NULL) {
+        jacobian_writer_.Write_o(i,
+                               residual_layout_[i],
+                               block_jacobians_o,
+                               jacobian_o);
+      }
+
       // Compute and store the gradient, if it was requested.
       if (gradient_p != NULL) {
         int num_residuals = constraint_block->NumResiduals();
@@ -269,28 +276,58 @@ class GHProgramEvaluator : public GHEvaluator {
           }
 
           MatrixTransposeVectorMultiply<Eigen::Dynamic, Eigen::Dynamic, 1>(
-              block_jacobians_p[j],
-              num_residuals,
-              parameter_block->LocalSize(),
-              block_residuals,
-              scratch->gradient_p.get() + parameter_block->delta_offset());
+              block_jacobians_p[j],         // a.src
+              num_residuals,                // a.rows
+              parameter_block->LocalSize(), // b.cols
+              block_residuals,              // b.src
+              scratch->gradient_p.get() + parameter_block->delta_offset()  // c.src
+          );
+        }
+      }
+
+      if (gradient_o != NULL) {
+        int num_residuals = constraint_block->NumResiduals();
+        int num_observation_blocks = constraint_block->NumObservationBlocks();
+        for (int j = 0; j < num_observation_blocks; ++j) {
+          const GHObservationBlock* observation_block =
+              constraint_block->observation_blocks()[j];
+          if (observation_block->IsConstant()) {
+            continue;
+          }
+
+          MatrixTransposeVectorMultiply<Eigen::Dynamic, Eigen::Dynamic, 1>(
+              block_jacobians_o[j],         // a.src
+              num_residuals,                // a.rows
+              observation_block->LocalSize(), // b.cols
+              block_residuals,              // b.src
+              scratch->gradient_o.get() + observation_block->delta_offset()  // c.src
+          );
         }
       }
     }
 
     if (!abort) {
       const int num_parameters = program_->NumEffectiveParameters();
+      const int num_observations = program_->NumEffectiveObservations();
 
       // Sum the cost and gradient (if requested) from each thread.
       (*cost) = 0.0;
       if (gradient_p != NULL) {
         VectorRef(gradient_p, num_parameters).setZero();
       }
+      if (gradient_o != NULL) {
+        VectorRef(gradient_o, num_observations).setZero();
+      }
+
       for (int i = 0; i < options_.num_threads; ++i) {
         (*cost) += evaluate_scratch_[i].cost;
         if (gradient_p != NULL) {
           VectorRef(gradient_p, num_parameters) +=
               VectorRef(evaluate_scratch_[i].gradient_p.get(), num_parameters);
+        }
+        if (gradient_o != NULL) {
+          VectorRef(gradient_o, num_observations) +=
+              VectorRef(evaluate_scratch_[i].gradient_o.get(), num_observations);
         }
       }
 
@@ -302,6 +339,11 @@ class GHProgramEvaluator : public GHEvaluator {
         JacobianFinalizer f;
         f(jacobian_p, num_parameters);
       }
+      if (jacobian_o != NULL) {
+        JacobianFinalizer f;
+        f(jacobian_o, num_observations);
+      }
+
     }
     return !abort;
   }
@@ -348,6 +390,7 @@ class GHProgramEvaluator : public GHEvaluator {
   // Per-thread scratch space needed to evaluate and store each residual block.
   struct EvaluateScratch {
     void Init(int max_parameters_per_constraint_block,
+              int max_observations_per_constraint_block,
               int max_scratch_doubles_needed_for_evaluate,
               int max_residuals_per_constraint_block,
               int num_parameters, int num_observations) {
@@ -364,7 +407,7 @@ class GHProgramEvaluator : public GHEvaluator {
       jacobian_p_block_ptrs.reset(
           new double*[max_parameters_per_constraint_block]);
       jacobian_o_block_ptrs.reset(
-          new double*[max_parameters_per_constraint_block]);
+          new double*[max_observations_per_constraint_block]);
     }
 
     double cost;
@@ -398,6 +441,8 @@ class GHProgramEvaluator : public GHEvaluator {
                                                  int num_threads) {
     int max_parameters_per_constraint_block =
         program.MaxParametersPerConstraintBlock();
+    int max_observations_per_constraint_block =
+        program.MaxObservationsPerConstraintBlock();
     int max_scratch_doubles_needed_for_evaluate =
         program.MaxScratchDoublesNeededForEvaluate();
     int max_residuals_per_constraint_block =
@@ -409,6 +454,7 @@ class GHProgramEvaluator : public GHEvaluator {
     EvaluateScratch* evaluate_scratch = new EvaluateScratch[num_threads];
     for (int i = 0; i < num_threads; i++) {
       evaluate_scratch[i].Init(max_parameters_per_constraint_block,
+                               max_observations_per_constraint_block,
                                max_scratch_doubles_needed_for_evaluate,
                                max_residuals_per_constraint_block,
                                num_parameters, num_observations);

@@ -51,9 +51,9 @@ GHScratchEvaluatePreparer* GHScratchEvaluatePreparer::Create(
 }
 
 void GHScratchEvaluatePreparer::Init(int max_derivatives_per_constraint_block) {
-  jacobian_scratch_.reset(
+  jacobian_p_scratch_.reset(
       new double[max_derivatives_per_constraint_block]);
-  jacobian_obs_scratch_.reset(
+  jacobian_o_scratch_.reset(
       new double[max_derivatives_per_constraint_block]);
 }
 
@@ -62,7 +62,7 @@ void GHScratchEvaluatePreparer::Prepare_p(const GHConstraintBlock* constraint_bl
                                       int /* residual_block_index */,
                                         SparseMatrix* /*jacobian_p*/,
                                         double** jacobians_p) {
-  double* jacobian_block_cursor = jacobian_scratch_.get();
+  double* jacobian_block_cursor = jacobian_p_scratch_.get();
   int num_residuals = constraint_block->NumResiduals();
   int num_parameter_blocks = constraint_block->NumParameterBlocks();
   for (int j = 0; j < num_parameter_blocks; ++j) {
@@ -81,7 +81,7 @@ void GHScratchEvaluatePreparer::Prepare_o(const GHConstraintBlock* constraint_bl
                                       int /* residual_block_index */,
                                         SparseMatrix* /* jacobian_o */,
                                         double** jacobians_o) {
-  double* jacobian_obs_block_cursor = jacobian_obs_scratch_.get();
+  double* jacobian_block_cursor = jacobian_o_scratch_.get();
   int num_residuals = constraint_block->NumResiduals();
   int num_observation_blocks = constraint_block->NumObservationBlocks();
   for (int j = 0; j < num_observation_blocks; ++j) {
@@ -90,8 +90,8 @@ void GHScratchEvaluatePreparer::Prepare_o(const GHConstraintBlock* constraint_bl
     if (observation_block->IsConstant()) {
       jacobians_o[j] = NULL;
     } else {
-      jacobians_o[j] = jacobian_obs_block_cursor;
-      jacobian_obs_block_cursor += num_residuals * observation_block->LocalSize();
+      jacobians_o[j] = jacobian_block_cursor;
+      jacobian_block_cursor += num_residuals * observation_block->LocalSize();
     }
   }
 }

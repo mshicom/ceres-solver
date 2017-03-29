@@ -42,7 +42,7 @@
 #include "ceres/compressed_row_sparse_matrix.h"
 #include "ceres/cost_function.h"
 #include "ceres/crs_matrix.h"
-#include "ceres/evaluator.h"
+#include "ceres/GH_evaluator.h"
 #include "ceres/loss_function.h"
 #include "ceres/map_util.h"
 #include "ceres/GH_parameter_block.h"
@@ -1007,7 +1007,7 @@ bool GHProblem::Evaluate(const GHProblem::EvaluateOptions& evaluate_options,
   }
   program.SetObservationOffsetsAndIndex();
 
-  Evaluator::Options evaluator_options;
+  GHEvaluator::Options evaluator_options;
 
   // Even though using SPARSE_NORMAL_CHOLESKY requires SuiteSparse or
   // CXSparse, here it just being used for telling the evaluator to
@@ -1026,8 +1026,8 @@ bool GHProblem::Evaluate(const GHProblem::EvaluateOptions& evaluate_options,
 #endif  // CERES_USE_OPENMP
 
   string error;
-  scoped_ptr<Evaluator> evaluator(
-      Evaluator::Create(evaluator_options, &program, &error));
+  scoped_ptr<GHEvaluator> evaluator(
+      GHEvaluator::Create(evaluator_options, &program, &error));
   if (evaluator.get() == NULL) {
     LOG(ERROR) << "Unable to create an Evaluator object. "
                << "Error: " << error
@@ -1054,20 +1054,30 @@ bool GHProblem::Evaluate(const GHProblem::EvaluateOptions& evaluate_options,
     residuals->resize(evaluator->NumResiduals());
   }
 
-  if (gradient != NULL) {
-    gradient->resize(evaluator->NumEffectiveParameters());
+  if (gradient_p != NULL) {
+    gradient_p->resize(evaluator->NumEffectiveParameters());
+  }
+  if (gradient_o != NULL) {
+    gradient_o->resize(evaluator->NumEffectiveObservations());
   }
 
-  scoped_ptr<CompressedRowSparseMatrix> tmp_jacobian;
-  if (jacobian != NULL) {
-    tmp_jacobian.reset(
-        down_cast<CompressedRowSparseMatrix*>(evaluator->CreateJacobian()));
+  scoped_ptr<CompressedRowSparseMatrix> tmp_jacobian_p;
+  if (jacobian_p != NULL) {
+    tmp_jacobian_p.reset(
+        down_cast<CompressedRowSparseMatrix*>(evaluator->CreateJacobian_p()));
+  }
+
+  scoped_ptr<CompressedRowSparseMatrix> tmp_jacobian_o;
+  if (jacobian_o != NULL) {
+    tmp_jacobian_o.reset(
+        down_cast<CompressedRowSparseMatrix*>(evaluator->CreateJacobian_o()));
   }
 
   // Point the state pointers to the user state pointers. This is
   // needed so that we can extract a parameter vector which is then
   // passed to Evaluator::Evaluate.
   program.SetParameterBlockStatePtrsToUserStatePtrs();
+  program.SetObservationBlockStatePtrsToUserStatePtrs();
 
   // Copy the value of the parameter blocks into a vector, since the
   // Evaluate::Evaluate method needs its input as such. The previous
@@ -1077,18 +1087,21 @@ bool GHProblem::Evaluate(const GHProblem::EvaluateOptions& evaluate_options,
   // used for evaluation.
   Vector parameters(program.NumParameters());
   program.ParameterBlocksToStateVector(parameters.data());
+  Vector observations(program.NumObservations());
+  program.ObservationBlocksToStateVector(observations.data());
 
   double tmp_cost = 0;
 
-  Evaluator::EvaluateOptions evaluator_evaluate_options;
+  GHEvaluator::EvaluateOptions evaluator_evaluate_options;
   evaluator_evaluate_options.apply_loss_function =
       evaluate_options.apply_loss_function;
   bool status = evaluator->Evaluate(evaluator_evaluate_options,
-                                    parameters.data(),
+                                    parameters.data(),observations.data(),
                                     &tmp_cost,
                                     residuals != NULL ? &(*residuals)[0] : NULL,
-                                    gradient != NULL ? &(*gradient)[0] : NULL,
-                                    tmp_jacobian.get());
+                                    gradient_p != NULL ? &(*gradient_p)[0] : NULL,
+                                    gradient_o != NULL ? &(*gradient_o)[0] : NULL,
+                                    tmp_jacobian_p.get(),tmp_jacobian_o.get());
 
   // Make the parameter blocks that were temporarily marked constant,
   // variable again.
@@ -1096,17 +1109,26 @@ bool GHProblem::Evaluate(const GHProblem::EvaluateOptions& evaluate_options,
     variable_parameter_blocks[i]->SetVarying();
   }
 
+  for (int i = 0; i < variable_observation_blocks.size(); ++i) {
+    variable_observation_blocks[i]->SetVarying();
+  }
+
   if (status) {
     if (cost != NULL) {
       *cost = tmp_cost;
     }
-    if (jacobian != NULL) {
-      tmp_jacobian->ToCRSMatrix(jacobian);
+    if (jacobian_p != NULL) {
+      tmp_jacobian_p->ToCRSMatrix(jacobian_p);
+    }
+    if (jacobian_o != NULL) {
+      tmp_jacobian_o->ToCRSMatrix(jacobian_o);
     }
   }
 
   program_->SetParameterBlockStatePtrsToUserStatePtrs();
   program_->SetParameterOffsetsAndIndex();
+  program_->SetObservationBlockStatePtrsToUserStatePtrs();
+  program_->SetObservationOffsetsAndIndex();
   return status;
 }
 
@@ -1118,8 +1140,8 @@ int GHProblem::NumParameters() const {
   return program_->NumParameters();
 }
 
-int GHProblem::NumResidualBlocks() const {
-  return program_->NumResidualBlocks();
+int GHProblem::NumConstraintBlocks() const {
+  return program_->NumConstraintBlocks();
 }
 
 int GHProblem::NumResiduals() const {
@@ -1127,7 +1149,7 @@ int GHProblem::NumResiduals() const {
 }
 
 int GHProblem::ParameterBlockSize(const double* values) const {
-  ParameterBlock* parameter_block =
+  GHParameterBlock* parameter_block =
       FindWithDefault(parameter_block_map_, const_cast<double*>(values), NULL);
   if (parameter_block == NULL) {
     LOG(FATAL) << "Parameter block not found: " << values
@@ -1139,7 +1161,7 @@ int GHProblem::ParameterBlockSize(const double* values) const {
 }
 
 int GHProblem::ParameterBlockLocalSize(const double* values) const {
-  ParameterBlock* parameter_block =
+  GHParameterBlock* parameter_block =
       FindWithDefault(parameter_block_map_, const_cast<double*>(values), NULL);
   if (parameter_block == NULL) {
     LOG(FATAL) << "Parameter block not found: " << values
@@ -1165,37 +1187,48 @@ void GHProblem::GetParameterBlocks(vector<double*>* parameter_blocks) const {
   }
 }
 
-void GHProblem::GetResidualBlocks(
-    vector<ResidualBlockId>* residual_blocks) const {
-  CHECK_NOTNULL(residual_blocks);
-  *residual_blocks = program().residual_blocks();
+void GHProblem::GetConstraintBlocks(
+    vector<GHConstraintBlock*>* constraint_blocks) const {
+  CHECK_NOTNULL(constraint_blocks);
+  *constraint_blocks = program().constraint_blocks();
 }
 
-void GHProblem::GetParameterBlocksForResidualBlock(
-    const ResidualBlockId residual_block,
-    vector<double*>* parameter_blocks) const {
-  int num_parameter_blocks = residual_block->NumParameterBlocks();
+void GHProblem::GetParameterBlocksForConstraintBlock(
+    const ConstraintBlockId constraint_block,
+    std::vector<double*>* parameter_blocks) const {
+  int num_parameter_blocks = constraint_block->NumParameterBlocks();
   CHECK_NOTNULL(parameter_blocks)->resize(num_parameter_blocks);
   for (int i = 0; i < num_parameter_blocks; ++i) {
     (*parameter_blocks)[i] =
-        residual_block->parameter_blocks()[i]->mutable_user_state();
+        constraint_block->parameter_blocks()[i]->mutable_user_state();
   }
 }
 
-const CostFunction* GHProblem::GetCostFunctionForResidualBlock(
-    const ResidualBlockId residual_block) const {
-  return residual_block->cost_function();
+void GHProblem::GetObservationBlocksForConstraintBlock(
+    const ConstraintBlockId constraint_block,
+    std::vector<double*>* observation_blocks) const {
+    int num_observation_blocks = constraint_block->NumObservationBlocks();
+    CHECK_NOTNULL(observation_blocks)->resize(num_observation_blocks);
+    for (int i = 0; i < num_observation_blocks; ++i) {
+      (*observation_blocks)[i] =
+          constraint_block->observation_blocks()[i]->mutable_user_state();
+    }
+  }
+
+const GaussHelmertConstraintFunction* GHProblem::GetConstraintFunctionForConstraintBlock(
+    const ConstraintBlockId constraint_block) const {
+  return constraint_block->constraint_function();
 }
 
-const LossFunction* GHProblem::GetLossFunctionForResidualBlock(
-    const ResidualBlockId residual_block) const {
-  return residual_block->loss_function();
+const LossFunction* GHProblem::GetLossFunctionForConstraintBlock(
+    const ConstraintBlockId constraint_block) const {
+  return constraint_block->loss_function();
 }
 
-void GHProblem::GetResidualBlocksForParameterBlock(
+void GHProblem::GetConstraintBlockBlocksForParameterBlock(
     const double* values,
-    vector<ResidualBlockId>* residual_blocks) const {
-  ParameterBlock* parameter_block =
+    std::vector<ConstraintBlockId>* constraint_blocks) const {
+  GHParameterBlock* parameter_block =
       FindWithDefault(parameter_block_map_, const_cast<double*>(values), NULL);
   if (parameter_block == NULL) {
     LOG(FATAL) << "Parameter block not found: " << values
@@ -1206,25 +1239,64 @@ void GHProblem::GetResidualBlocksForParameterBlock(
   if (options_.enable_fast_removal) {
     // In this case the residual blocks that depend on the parameter block are
     // stored in the parameter block already, so just copy them out.
-    CHECK_NOTNULL(residual_blocks)->resize(
-        parameter_block->mutable_residual_blocks()->size());
-    std::copy(parameter_block->mutable_residual_blocks()->begin(),
-              parameter_block->mutable_residual_blocks()->end(),
-              residual_blocks->begin());
+    CHECK_NOTNULL(constraint_blocks)->resize(
+        parameter_block->mutable_constraint_blocks()->size());
+    std::copy(parameter_block->mutable_constraint_blocks()->begin(),
+              parameter_block->mutable_constraint_blocks()->end(),
+              constraint_blocks->begin());
     return;
   }
 
   // Find residual blocks that depend on the parameter block.
-  CHECK_NOTNULL(residual_blocks)->clear();
-  const int num_residual_blocks = NumResidualBlocks();
-  for (int i = 0; i < num_residual_blocks; ++i) {
-    ResidualBlock* residual_block =
-        (*(program_->mutable_residual_blocks()))[i];
-    const int num_parameter_blocks = residual_block->NumParameterBlocks();
+  CHECK_NOTNULL(constraint_blocks)->clear();
+  const int num_constraint_blocks = NumConstraintBlocks();
+  for (int i = 0; i < num_constraint_blocks; ++i) {
+    GHConstraintBlock* constraint_block =
+        (*(program_->mutable_constraint_blocks()))[i];
+    const int num_parameter_blocks = constraint_block->NumParameterBlocks();
     for (int j = 0; j < num_parameter_blocks; ++j) {
-      if (residual_block->parameter_blocks()[j] == parameter_block) {
-        residual_blocks->push_back(residual_block);
+      if (constraint_block->parameter_blocks()[j] == parameter_block) {
+        constraint_blocks->push_back(constraint_block);
         // The parameter blocks are guaranteed unique.
+        break;
+      }
+    }
+  }
+}
+
+void GHProblem::GetConstraintBlockBlocksForObservationBlock(
+    const double* values,
+    std::vector<ConstraintBlockId>* constraint_blocks) const {
+  GHObservationBlock* observation_block =
+      FindWithDefault(observation_block_map_, const_cast<double*>(values), NULL);
+  if (observation_block == NULL) {
+    LOG(FATAL) << "observation block not found: " << values
+               << ". You must add the observation block to the problem before "
+               << "you can get the residual blocks that depend on it.";
+  }
+
+  if (options_.enable_fast_removal) {
+    // In this case the residual blocks that depend on the observation block are
+    // stored in the observation block already, so just copy them out.
+    CHECK_NOTNULL(constraint_blocks)->resize(
+        observation_block->mutable_constraint_blocks()->size());
+    std::copy(observation_block->mutable_constraint_blocks()->begin(),
+              observation_block->mutable_constraint_blocks()->end(),
+              constraint_blocks->begin());
+    return;
+  }
+
+  // Find residual blocks that depend on the observation block.
+  CHECK_NOTNULL(constraint_blocks)->clear();
+  const int num_constraint_blocks = NumConstraintBlocks();
+  for (int i = 0; i < num_constraint_blocks; ++i) {
+    GHConstraintBlock* constraint_block =
+        (*(program_->mutable_constraint_blocks()))[i];
+    const int num_observation_blocks = constraint_block->NumObservationBlocks();
+    for (int j = 0; j < num_observation_blocks; ++j) {
+      if (constraint_block->observation_blocks()[j] == observation_block) {
+        constraint_blocks->push_back(constraint_block);
+        // The observation blocks are guaranteed unique.
         break;
       }
     }

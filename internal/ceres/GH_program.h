@@ -112,7 +112,7 @@ class GHProgram {
   // offsets) are correct.
   bool IsValid() const;
 
-  bool ParameterBlocksAreFinite(std::string* message) const;
+  bool BlocksAreFinite(std::string* message) const;
 
   // Returns true if the program has any non-constant parameter blocks
   // which have non-trivial bounds constraints.
@@ -151,6 +151,7 @@ class GHProgram {
   // pointer and error will contain a human readable description of
   // the problem.
   GHProgram* CreateReducedProgram(std::vector<double*>* removed_parameter_blocks,
+                                  std::vector<double*>* removed_observation_blocks,
                                 double* fixed_cost,
                                 std::string* error) const;
 
@@ -188,6 +189,7 @@ class GHProgram {
   // If there was a problem, then the function will return false and
   // error will contain a human readable description of the problem.
   bool RemoveFixedBlocks(std::vector<double*>* removed_parameter_blocks,
+                         std::vector<double*>* removed_observation_blocks,
                          double* fixed_cost,
                          std::string* message);
 

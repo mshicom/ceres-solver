@@ -198,9 +198,20 @@ void GHProgram::SetParameterOffsetsAndIndex() {
     state_offset += parameter_blocks_[i]->Size();
     delta_offset += parameter_blocks_[i]->LocalSize();
   }
+}
 
-  state_offset = 0;
-  delta_offset = 0;
+void GHProgram::SetObservationOffsetsAndIndex() {
+  // Set positions for all parameters appearing as arguments to residuals to one
+  // past the end of the parameter block array.
+  for (size_t i = 0; i < constraint_blocks_.size(); ++i) {
+    GHConstraintBlock* constraint_block = constraint_blocks_[i];
+    for (size_t j = 0; j < constraint_block->NumObservationBlocks(); ++j) {
+      constraint_block->observation_blocks()[j]->set_index(-1);
+    }
+  }
+  // For observations that appear in the program, set their position and offset.
+  int state_offset = 0;
+  int delta_offset = 0;
   for (size_t i = 0; i < observation_blocks_.size(); ++i) {
     observation_blocks_[i]->set_index(i);
     observation_blocks_[i]->set_state_offset(state_offset);
@@ -256,7 +267,7 @@ bool GHProgram::IsValid() const {
   return true;
 }
 
-bool GHProgram::ParameterBlocksAreFinite(string* message) const {
+bool GHProgram::BlocksAreFinite(string* message) const {
   CHECK_NOTNULL(message);
   for (int i = 0; i < parameter_blocks_.size(); ++i) {
     const GHParameterBlock* parameter_block = parameter_blocks_[i];
@@ -363,27 +374,34 @@ bool GHProgram::IsFeasible(string* message) const {
 
 GHProgram* GHProgram::CreateReducedProgram(
     vector<double*>* removed_parameter_blocks,
+    vector<double*>* removed_observation_blocks,
     double* fixed_cost,
     string* error) const {
   CHECK_NOTNULL(removed_parameter_blocks);
+  CHECK_NOTNULL(removed_observation_blocks);
   CHECK_NOTNULL(fixed_cost);
   CHECK_NOTNULL(error);
 
   scoped_ptr<GHProgram> reduced_program(new GHProgram(*this));
   if (!reduced_program->RemoveFixedBlocks(removed_parameter_blocks,
+                                          removed_observation_blocks,
                                           fixed_cost,
                                           error)) {
     return NULL;
   }
 
   reduced_program->SetParameterOffsetsAndIndex();
+  reduced_program->SetObservationOffsetsAndIndex();
+
   return reduced_program.release();
 }
 
 bool GHProgram::RemoveFixedBlocks(vector<double*>* removed_parameter_blocks,
+                                  vector<double*>* removed_observation_blocks,
                                 double* fixed_cost,
                                 string* error) {
   CHECK_NOTNULL(removed_parameter_blocks);
+  CHECK_NOTNULL(removed_observation_blocks);
   CHECK_NOTNULL(fixed_cost);
   CHECK_NOTNULL(error);
 
@@ -462,7 +480,7 @@ bool GHProgram::RemoveFixedBlocks(vector<double*>* removed_parameter_blocks,
   for (int i = 0; i < observation_blocks_.size(); ++i) {
     GHObservationBlock* observation_block = observation_blocks_[i];
     if (observation_block->index() == -1) {
-      removed_parameter_blocks->push_back(
+      removed_observation_blocks->push_back(
           observation_block->mutable_user_state());
     } else {
       observation_blocks_[num_active_observation_blocks++] = observation_block;
@@ -611,19 +629,19 @@ int GHProgram::MaxScratchDoublesNeededForEvaluate() const {
 int GHProgram::MaxDerivativesPerConstraintBlock() const {
   int max_derivatives = 0;
   for (int i = 0; i < constraint_blocks_.size(); ++i) {
-    int derivatives = 0;
+    int derivatives_p = 0, derivatives_o = 0;
     GHConstraintBlock* constraint_block = constraint_blocks_[i];
     int num_parameters = constraint_block->NumParameterBlocks();
     for (int j = 0; j < num_parameters; ++j) {
-      derivatives += constraint_block->NumResiduals() *
+      derivatives_p += constraint_block->NumResiduals() *
                      constraint_block->parameter_blocks()[j]->LocalSize();
     }
     int num_observations = constraint_block->NumObservationBlocks();
     for (int j = 0; j < num_observations; ++j) {
-      derivatives += constraint_block->NumResiduals() *
+      derivatives_o += constraint_block->NumResiduals() *
                      constraint_block->observation_blocks()[j]->LocalSize();
     }
-    max_derivatives = max(max_derivatives, derivatives);
+    max_derivatives = max(max_derivatives, max(derivatives_p, derivatives_o));
   }
   return max_derivatives;
 }

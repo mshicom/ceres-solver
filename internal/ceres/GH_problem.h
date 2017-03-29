@@ -211,7 +211,7 @@ class GHProblem {
   int NumObservationBlocks() const;
   int NumObservations() const;
   int NumConstraintBlocks() const;
-  int NumConstraints() const;
+  int NumResiduals() const;
 
   int ParameterBlockSize(const double* parameter_block) const;
   int ParameterBlockLocalSize(const double* parameter_block) const;

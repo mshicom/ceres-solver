@@ -221,6 +221,8 @@ bool GHConstraintBlock::Evaluate(bool apply_loss_function,
         global_jacobians[i] = jacobians_p[i];
       }
     }
+  }
+  if (jacobians_o != NULL) {
     for (int i = 0; i < num_observation_blocks; ++i) {
       int i_abs = num_parameter_blocks+i;
       const GHObservationBlock* observation_block = observation_blocks_[i];
