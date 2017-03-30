@@ -57,6 +57,7 @@
 #include "ceres/GH_problem.h"
 #include "ceres/GH_program_evaluator.h"
 #include "ceres/compressed_row_sparse_matrix.h"
+#include "ceres/GH_block_jacobian_writer.h"
 
 namespace ceres {
 
@@ -169,47 +170,8 @@ TEST(GHPROBLEM, GHConstraintBlock)
     delete[] scratch;
 }
 
-TEST(GHPROBLEM, GHProgramEvaluator)
+TEST(GHPROBLEM, GHProblemEvaluate)
 {
-    double x[4] = {0, 0, 0, 0};
-    double l[4] = {1, 2, 3, 4};
-    double residuals[4];
-    double cost[1];
-
-    GHParameterBlock   p0(x,3,0);
-    GHObservationBlock o0(l,4,0);
-
-    std::vector<GHParameterBlock*> p;
-    p.push_back(&p0);
-
-    std::vector<GHObservationBlock*> o;
-    o.push_back(&o0);
-
-    GHConstraintBlock block(EqualityConstraintFunctor::create(), NULL, p, o, 0);
-    EXPECT_EQ(block.NumObservationBlocks(),  1);
-    EXPECT_EQ(block.NumParameterBlocks(),  1);
-    EXPECT_EQ(block.NumResiduals(),  4);
-    EXPECT_EQ(block.NumScratchDoublesForEvaluate(),4);
-    double a[4][4];
-    double* jacobians_p[4] = {a[0], a[1], a[2], a[3]};
-    Eigen::Map<Eigen::Matrix4d> A(&a[0][0]);
-
-    double b[4][4];
-    double* jacobians_o[4] = {b[0], b[1], b[2], b[3]};
-    Eigen::Map<Eigen::Matrix4d> B(&b[0][0]);
-    double* scratch = new double[block.NumScratchDoublesForEvaluate()];
-
-    block.Evaluate(false, cost, residuals, jacobians_p, jacobians_o, scratch);
-    std::cout << cost[0] << std::endl;
-    std::cout << ConstVectorRef(residuals, 4) << std::endl;
-    std::cout << A << std::endl;
-    std::cout << B << std::endl;
-    delete[] scratch;
-
-}
-
-TEST(GHProblem, GHProblem){
-
     double x[4] = {0, 0, 0, 0};
     double l[4] = {1, 2, 3, 4};
 
@@ -222,20 +184,14 @@ TEST(GHProblem, GHProblem){
     GHProblem problem;
     problem.AddConstraintBlock(EqualityConstraintFunctor::create(),NULL, p, o);
 
-    double residuals[4];
     double cost;
     std::vector<double> residual, gradient_p, gradient_o;
     CRSMatrix A,B;
-    Matrix crsm_dense;
-
     problem.Evaluate(GHProblem::EvaluateOptions(),
                      &cost, &residual,
                      &gradient_p, &gradient_o,
                      &A, &B);
     std::cout << cost << std::endl;
-    A;
-    B;
-
 
 }
 

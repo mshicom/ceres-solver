@@ -40,9 +40,11 @@
 namespace ceres {
 namespace internal {
 
-void GHBlockEvaluatePreparer::Init(int const* const* jacobian_layout,
+void GHBlockEvaluatePreparer::Init(int const* const* jacobian_layout_p,
+                                   int const* const* jacobian_layout_o,
                                  int max_derivatives_per_residual_block) {
-  jacobian_layout_ = jacobian_layout;
+  jacobian_layout_p_ = jacobian_layout_p;
+  jacobian_layout_o_ = jacobian_layout_o;
   scratch_evaluate_preparer_.Init(max_derivatives_per_residual_block);
 }
 
@@ -63,7 +65,7 @@ void GHBlockEvaluatePreparer::Prepare_p(const GHConstraintBlock* constraint_bloc
   double* jacobian_values =
       down_cast<BlockSparseMatrix*>(jacobian)->mutable_values();
 
-  const int* jacobian_block_offset = jacobian_layout_[constraint_block_index];
+  const int* jacobian_block_offset = jacobian_layout_p_[constraint_block_index];
   const int num_parameter_blocks = constraint_block->NumParameterBlocks();
   for (int j = 0; j < num_parameter_blocks; ++j) {
     if (!constraint_block->parameter_blocks()[j]->IsConstant()) {
@@ -95,7 +97,7 @@ void GHBlockEvaluatePreparer::Prepare_o(const GHConstraintBlock* constraint_bloc
   double* jacobian_values =
       down_cast<BlockSparseMatrix*>(jacobian)->mutable_values();
 
-  const int* jacobian_block_offset = jacobian_layout_[constraint_block_index];
+  const int* jacobian_block_offset = jacobian_layout_p_[constraint_block_index];
   const int num_observation_blocks = constraint_block->NumObservationBlocks();
   for (int j = 0; j < num_observation_blocks; ++j) {
     if (!constraint_block->observation_blocks()[j]->IsConstant()) {

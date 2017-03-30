@@ -26,60 +26,62 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 //
-// Author: keir@google.com (Keir Mierle)
+// Author: richie.stebbing@gmail.com (Richard Stebbing)
 //
-// A evaluate preparer which puts jacobian the evaluated jacobian blocks
-// directly into their final resting place in an overall block sparse matrix.
-// The evaluator takes care to avoid evaluating the jacobian for fixed
-// parameters.
+// A jacobian writer that directly writes to dynamic compressed row sparse
+// matrices.
 
-#ifndef CERES_INTERNAL_GH_BLOCK_EVALUATE_PREPARER_H_
-#define CERES_INTERNAL_GH_BLOCK_EVALUATE_PREPARER_H_
+#ifndef CERES_INTERNAL_GH_DYNAMIC_COMPRESSED_ROW_JACOBIAN_WRITER_H_
+#define CERES_INTERNAL_GH_DYNAMIC_COMPRESSED_ROW_JACOBIAN_WRITER_H_
 
+#include "ceres/GH_evaluator.h"
 #include "ceres/GH_scratch_evaluate_preparer.h"
 
 namespace ceres {
 namespace internal {
 
-class GHConstraintBlock;
+class GHProgram;
 class SparseMatrix;
 
-class GHBlockEvaluatePreparer {
+class GHDynamicCompressedRowJacobianWriter {
  public:
-  // Using Init() instead of a constructor allows for allocating this structure
-  // with new[]. This is because C++ doesn't allow passing arguments to objects
-  // constructed with new[] (as opposed to plain 'new').
-  void Init(int const* const* jacobian_layout_p,
-            int const* const* jacobian_layout_o,
-            int max_derivatives_per_residual_block);
+  GHDynamicCompressedRowJacobianWriter(GHEvaluator::Options /* ignored */,
+                                     GHProgram* program)
+    : program_(program) {
+  }
 
-  // EvaluatePreparer interface
+  // JacobianWriter interface.
 
-  // Point the jacobian blocks directly into the block sparse matrix, if
-  // jacobian is non-null. Otherwise, uses an internal per-thread buffer to
-  // store the jacobians temporarily.
-  void Prepare_p(const GHConstraintBlock* constraint_block,
-               int constraint_block_index,
-               SparseMatrix* jacobian,
-               double** jacobians);
+  // The compressed row matrix has different layout than that assumed by
+  // the cost functions. The scratch space is therefore used to store
+  // the jacobians (including zeros) temporarily before only the non-zero
+  // entries are copied over to the larger jacobian in `Write`.
+  GHScratchEvaluatePreparer* CreateEvaluatePreparers(int num_threads);
 
-  void Prepare_o(const GHConstraintBlock* constraint_block,
-               int constraint_block_index,
-               SparseMatrix* jacobian,
-               double** jacobians);
+  // Return a `DynamicCompressedRowSparseMatrix` which is filled by
+  // `Write`. Note that `Finalize` must be called to make the
+  // `CompressedRowSparseMatrix` interface valid.
+  SparseMatrix* CreateJacobian_p() const;
+  SparseMatrix* CreateJacobian_o() const;
 
+  // Write only the non-zero jacobian entries for a residual block
+  // (specified by `residual_id`) into `base_jacobian`, starting at the row
+  // specifed by `residual_offset`.
+  //
+  // This method is thread-safe over residual blocks (each `residual_id`).
+  void Write_p(int residual_id,
+             int residual_offset,
+             double **jacobians,
+             SparseMatrix* base_jacobian);
+  void Write_o(int residual_id,
+             int residual_offset,
+             double **jacobians,
+             SparseMatrix* base_jacobian);
  private:
-  int const* const* jacobian_layout_p_;
-  int const* const* jacobian_layout_o_;
-
-
-  // For the case that the overall jacobian is not available, but the
-  // individual jacobians are requested, use a pass-through scratch evaluate
-  // preparer.
-  GHScratchEvaluatePreparer scratch_evaluate_preparer_;
+  GHProgram* program_;
 };
 
 }  // namespace internal
 }  // namespace ceres
 
-#endif  // CERES_INTERNAL_BLOCK_EVALUATE_PREPARER_H_
+#endif  // CERES_INTERNAL_DYNAMIC_COMPRESSED_ROW_JACOBIAN_WRITER_H_

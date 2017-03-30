@@ -31,12 +31,12 @@
 #include <vector>
 #include "ceres/GH_block_evaluate_preparer.h"
 #include "ceres/GH_block_jacobian_writer.h"
-#include "ceres/compressed_row_jacobian_writer.h"
+#include "ceres/GH_compressed_row_jacobian_writer.h"
 #include "ceres/compressed_row_sparse_matrix.h"
 #include "ceres/crs_matrix.h"
 #include "ceres/GH_dense_jacobian_writer.h"
 #include "ceres/dynamic_compressed_row_finalizer.h"
-#include "ceres/dynamic_compressed_row_jacobian_writer.h"
+#include "ceres/GH_dynamic_compressed_row_jacobian_writer.h"
 #include "ceres/GH_evaluator.h"
 #include "ceres/internal/port.h"
 #include "ceres/GH_program_evaluator.h"
@@ -64,19 +64,19 @@ GHEvaluator* GHEvaluator::Create(const GHEvaluator::Options& options,
         return new GHProgramEvaluator<GHBlockEvaluatePreparer,
                                     GHBlockJacobianWriter>(options,
                                                          program);
-#if 0
+
       case SPARSE_NORMAL_CHOLESKY:
         if (options.dynamic_sparsity) {
           return new GHProgramEvaluator<GHScratchEvaluatePreparer,
                                       GHDynamicCompressedRowJacobianWriter,
-                                      GHDynamicCompressedRowJacobianFinalizer>(
+                                      DynamicCompressedRowJacobianFinalizer>(
                                           options, program);
         } else {
           return new GHProgramEvaluator<GHScratchEvaluatePreparer,
                                       GHCompressedRowJacobianWriter>(options,
                                                                    program);
         }
-#endif
+
       default:
         *error = "Invalid Linear Solver Type. Unable to create evaluator.";
         return NULL;

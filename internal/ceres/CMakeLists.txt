@@ -125,7 +125,8 @@ set(CERES_INTERNAL_SRC
     GH_scratch_evaluate_preparer.cc
     GH_block_evaluate_preparer.cc
     GH_block_jacobian_writer.cc
-
+    GH_compressed_row_jacobian_writer.cc
+    GH_dynamic_compressed_row_jacobian_writer.cc
 )
 
 # Also depend on the header files so that they appear in IDEs.
