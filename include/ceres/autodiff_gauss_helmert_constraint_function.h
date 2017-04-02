@@ -206,22 +206,23 @@ class AutoDiffGaussHelmertConstraintFunction : public SizedGaussHelmertConstrain
                         double* residuals,
                         double** jacobians_p,
                         double** jacobians_o) const {
+    CHECK_NOTNULL(residuals);
 
-    if (jacobians_p == NULL && jacobians_o== NULL ) { // no Jacobians needed
+    if ( jacobians_p != NULL || jacobians_o != NULL) {
+      return internal::AutoDiff2<CostFunctor, double, kObservationStart,
+             N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>::Differentiate(
+                 *functor_,
+                 parameters, observations,
+                 SizedGaussHelmertConstraintFunction<kNumResiduals,kObservationStart,
+                                   N0, N1, N2, N3, N4,
+                                   N5, N6, N7, N8, N9>::num_residuals(),
+                 residuals,
+                 jacobians_p, jacobians_o);
+    } else {  // no jacobian needed
       return internal::VariadicEvaluate2<
           CostFunctor, double, kObservationStart, N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>
           ::Call(*functor_, parameters, observations, residuals);
     }
-    bool sucess = internal::AutoDiff2<CostFunctor, double, kObservationStart,
-           N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>::Differentiate(
-               *functor_,
-               parameters, observations,
-               SizedGaussHelmertConstraintFunction<kNumResiduals,kObservationStart,
-                                 N0, N1, N2, N3, N4,
-                                 N5, N6, N7, N8, N9>::num_residuals(),
-               residuals,
-               jacobians_p, jacobians_o);
-    return sucess;
   }
 
  private:

@@ -401,23 +401,25 @@ struct AutoDiff2 {
 
     internal::Take0thOrderPart(num_outputs, output, function_value);
 
-#define CERES_TAKE_1ST_ORDER_PERTURBATION(i)                   \
-    if (N ## i) {                                              \
-      if (i<k2Start) {                                         \
-         if (jacobians_1!=NULL)                                \
-           internal::Take1stOrderPart<JetT, T,                 \
-                                      jet ## i,                \
-                                      N ## i>(num_outputs,     \
-                                              output,          \
-                                              jacobians_1[i]); \
-      } else {                                                 \
-         if (jacobians_2!=NULL)                                \
-           internal::Take1stOrderPart<JetT, T,                 \
-                                      jet ## i,                \
-                                      N ## i>(num_outputs,     \
-                                              output,          \
-                                              jacobians_2[i-k2Start]);\
-      }\
+#define CERES_TAKE_1ST_ORDER_PERTURBATION(i)                        \
+    if (N ## i) {                                                   \
+      if (i<k2Start) {                                              \
+         if (jacobians_1) {                                         \
+            if (jacobians_1[i]) {                                   \
+                internal::Take1stOrderPart<JetT, T,                 \
+                                           jet ## i,                \
+                                           N ## i>(num_outputs,     \
+                                                   output,          \
+                                                   jacobians_1[i]);}}\
+      } else {                                                      \
+         if (jacobians_2) {                                         \
+            if (jacobians_2[i-k2Start]) {                           \
+                internal::Take1stOrderPart<JetT, T,                 \
+                                           jet ## i,                \
+                                           N ## i>(num_outputs,     \
+                                                   output,          \
+                                                   jacobians_2[i-k2Start]);}}\
+      }                                                             \
     }
     CERES_TAKE_1ST_ORDER_PERTURBATION(0);
     CERES_TAKE_1ST_ORDER_PERTURBATION(1);

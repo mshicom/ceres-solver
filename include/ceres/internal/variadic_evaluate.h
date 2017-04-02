@@ -188,7 +188,7 @@ struct VariadicEvaluate<Functor, T, ceres::DYNAMIC, ceres::DYNAMIC,
   }
 };
 
-#define CERE_SELECT_INPUT(i) (i < k2Start)? input_1[i]:input_2[i]
+#define CERE_SELECT_INPUT(i) (i < k2Start)? input_1[i]:input_2[i-k2Start]
 template<typename Functor, typename T, int k2Start, int N0, int N1, int N2, int N3, int N4,
          int N5, int N6, int N7, int N8, int N9>
 struct VariadicEvaluate2 {
