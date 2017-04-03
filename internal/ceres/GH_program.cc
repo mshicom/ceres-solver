@@ -60,6 +60,7 @@ GHProgram::GHProgram() {}
 
 GHProgram::GHProgram(const GHProgram& program)
     : parameter_blocks_(program.parameter_blocks_),
+      observation_blocks_(program.observation_blocks_),
       constraint_blocks_(program.constraint_blocks_) {
 }
 
