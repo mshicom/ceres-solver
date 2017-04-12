@@ -395,26 +395,32 @@ public:
     GHObservationBlock(double* user_state,
                    int size,
                    int index,
-                   double* covariance_matrix = NULL,
                    LocalParameterization* local_parameterization = NULL)
         :GHParameterBlock(user_state, size, index, local_parameterization),
-         state_residual_(new double[size])
-    {
-        if (covariance_matrix != NULL) {
-          covariance_matrix_.reset(new double[size_*size_]);
-          ceres::MatrixRef(covariance_matrix_.get(), size_, size_) =
-                  ceres::ConstMatrixRef(covariance_matrix, size_, size_);
-        }
+         state_residual_(new double[size]) {
         ceres::VectorRef(state_residual_.get(), size_).setZero();
     }
 
-    bool HasCovariance() {
-        return covariance_matrix_.get() != NULL;
+    bool SetCovariance(const Matrix& covariance_matrix){
+          CHECK_EQ(covariance_matrix.cols(), size_)
+                  << "the size of covariance matrix does not match";
+          CHECK_EQ(covariance_matrix.rows(), size_)
+                  << "the size of covariance matrix does not match";
+          covariance_matrix_.resize(size_, size_);
+          covariance_matrix_ = covariance_matrix;
+          return true;
     }
 
+    const Matrix& Covariance() const{
+        return covariance_matrix_;
+    }
+
+    bool HasCovariance() {
+        return covariance_matrix_.size() > 0;
+    }
 
 protected:
-    scoped_array<double> covariance_matrix_;
+    Matrix covariance_matrix_;
     scoped_array<double> state_residual_;
 
 };
