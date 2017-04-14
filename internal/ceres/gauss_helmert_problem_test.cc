@@ -69,6 +69,8 @@
 #include "ceres/compressed_col_sparse_matrix_utils.h"
 #include "ceres/compressed_row_sparse_matrix.h"
 
+#include <glog/logging.h>
+
 namespace ceres {
 
 using namespace ceres::internal;
@@ -152,11 +154,11 @@ class GHProblemTest : public ::testing::Test {
   protected:
 
   virtual void SetUp() {
-    VectorRef(x,    4) << 0, 0, 0, 0;
+    VectorRef(x[0], 4) << 0, 0, 0, 0;
     VectorRef(l[0], 4) << 1, 1, 1, 1;
     VectorRef(l[1], 4) << 2, 2, 2, 2;
 
-    p.push_back(x);
+    p.push_back(x[0]);
     o1.push_back(l[0]);
     o2.push_back(l[1]);
 
@@ -174,7 +176,7 @@ class GHProblemTest : public ::testing::Test {
     expect_residual_affine = (Vector(4)<< 10, 18, 17, 10).finished();
     expect_cost_affine  =  0.5*expect_residual_affine.squaredNorm();
   }
-    double x[4];
+    double x[1][4];
     double l[2][4];
     std::vector<double*> p;
     std::vector<double*> o1;
@@ -196,7 +198,7 @@ TEST_F(GHProblemTest, GaussHelmertConstraintFunction)
   double* jacobians_o[4] = {b[0], b[1], b[2], b[3]};
   Eigen::Map<Matrix> B(&b[0][0],4,4);
 
-  double* parameters[1] = {x};
+  double* parameters[1] = {x[0]};
   double* observations[1] = {l[0]};
 
   GaussHelmertConstraintFunction* constraint_function = new EqualityConstraintFunction();
@@ -230,7 +232,7 @@ TEST_F(GHProblemTest, AutoDiffGaussHelmertConstraintFunction)
   double* jacobians_o[4] = {b[0], b[1], b[2], b[3]};
   MatrixRef B(&b[0][0],4,4);
 
-  double* parameters[1] = {x};
+  double* parameters[1] = {x[0]};
   double* observations[1] = {l[0]};
 
   GaussHelmertConstraintFunction* constraint_function = AffineConstraintFunctor::create(affine_A, affine_B);
@@ -256,8 +258,8 @@ TEST_F(GHProblemTest, GHConstraintBlock)
     double residuals[4];
     double cost;
 
-    GHParameterBlock   p0(x,   4,0);
-    GHObservationBlock o0(l[0],4,0);
+    GHParameterBlock   p0(x[0], 4,0);
+    GHObservationBlock o0(l[0], 4,0);
 
     std::vector<GHParameterBlock*> p;
     p.push_back(&p0);
@@ -344,7 +346,7 @@ TEST_F(GHProblemTest, GHProblemEvaluate)
     EXPECT_TRUE( ( B_dense.array() == -Eigen::Matrix<double,8,8>::Identity().array() ).all() );
 
 
-    problem.SetParameterBlockConstant(x);
+    problem.SetParameterBlockConstant(x[0]);
     problem.Evaluate(GHProblem::EvaluateOptions(),
                      NULL, NULL,
                      NULL, NULL,
@@ -378,7 +380,7 @@ TEST_F(GHProblemTest, GHProblemEvaluateWithParameterization)
 
     std::vector<int> const_x_idx;
     const_x_idx.push_back(2);
-    problem.SetParameterization(x, new SubsetParameterization(4, const_x_idx));
+    problem.SetParameterization(x[0], new SubsetParameterization(4, const_x_idx));
 
     double cost;
     std::vector<double> residual, gradient_p, gradient_o;
@@ -401,10 +403,9 @@ TEST_F(GHProblemTest, GHProblemEvaluateWithParameterization)
 //
 //  R x = e_i
 //
-// which is used to the i^th column of R^{-1}, e_i is a vector with
+// which is used to calculate the i^th column of R^{-1}. e_i is a vector with
 // e(rhs_nonzero_index) = 1 and all other entries zero.
-inline
-void SolveInverseOfUpperTriangularInPlace(int num_cols,
+inline void SolveInverseOfUpperTriangularInPlace(int num_cols,
                       const int* rows,
                       const int* cols,
                       const double* values,
@@ -429,44 +430,101 @@ void SolveInverseOfUpperTriangularInPlace(int num_cols,
     }
 }
 
+
 TEST_F(GHProblemTest, dev)
 {
     GHProblem problem;
     problem.AddConstraintBlock(AffineConstraintFunctor::create(affine_A, affine_B),NULL, p, o1);
     problem.AddConstraintBlock(AffineConstraintFunctor::create(affine_A, affine_B),NULL, p, o2);
 
+    GHProgram* program = problem.mutable_program();
+    program->SetParameterOffsetsAndIndex();
+    program->SetObservationOffsetsAndIndex();
+
+    GHEvaluator::Options options;
+    std::string error;
+    options.linear_solver_type = DENSE_QR;
+    scoped_ptr<GHEvaluator> evaluator(GHEvaluator::Create(options, program, &error));
+    scoped_ptr<DenseSparseMatrix> A(down_cast<DenseSparseMatrix*>(evaluator->CreateJacobian_p()));
+    scoped_ptr<DenseSparseMatrix> B(down_cast<DenseSparseMatrix*>(evaluator->CreateJacobian_o()));
+    double cost;
+
+    Vector residual(program->NumResiduals());
+    Vector correction(program->NumEffectiveObservations());
+    correction.setZero();
+    for(int i=0; i<5; i++ ) {
+        evaluator->Evaluate(&x[0][0], &l[0][0],
+                &cost, residual.data(),
+                NULL, NULL,
+                A.get() , B.get());
+        std::cout << "iter:" << i << " cost:" << cost << std::endl;
+
+//        std::cout<< A->mutable_matrix() << std::endl;
+//        std::cout<< B->mutable_matrix() << std::endl;
+        Eigen::HouseholderQR< ColMajorMatrix > qr_solver(B->mutable_matrix().transpose());
+
+        Vector c = B->mutable_matrix() * correction - residual;
+//        std::cout<< c << std::endl;
+
+        ColMajorMatrix J = qr_solver.matrixQR().template triangularView<Eigen::Upper>().transpose().solve(A->mutable_matrix());
+//        std::cout<< J << std::endl;
+
+        DenseSparseMatrix J_op(J);
+
+        Vector cp = qr_solver.matrixQR().template triangularView<Eigen::Upper>().transpose().solve(c);
+//        std::cout<< cp << std::endl;
+
+        LinearSolver::Options solver_options;
+        LinearSolver::PerSolveOptions pre_opt;
+        solver_options.type = DENSE_QR;
+        scoped_ptr<LinearSolver> solver(LinearSolver::Create(solver_options));
+        Vector dx(program->NumEffectiveParameters());
+
+        solver->Solve(&J_op, cp.data(), pre_opt, dx.data());
+        LOG(INFO) << dx << std::endl;
+
+        Vector dl = qr_solver.householderQ() * (cp - J*dx) - correction;
+        std::cout << dl << std::endl;
+
+        program->Plus_p(&x[0][0], dx.data(), &x[0][0]);
+        program->Plus_o(&l[0][0], dl.data(), &l[0][0]);
+        program->Plus_o(correction.data(), dl.data(), correction.data());
+    }
+
+#if 0
+    options.linear_solver_type = SPARSE_NORMAL_CHOLESKY;
+    scoped_ptr<GHEvaluator> evaluator(GHEvaluator::Create(options, program, &error));
+    scoped_ptr<CompressedRowSparseMatrix> A(down_cast<CompressedRowSparseMatrix*>(evaluator->CreateJacobian_p()));
+    scoped_ptr<CompressedRowSparseMatrix> B(down_cast<CompressedRowSparseMatrix*>(evaluator->CreateJacobian_o()));
 
     double cost;
-    std::vector<double> residual, gradient_p, gradient_o;
-    CRSMatrix A,B;
-    problem.Evaluate(GHProblem::EvaluateOptions(),
-                     &cost, &residual,
-                     &gradient_p, &gradient_o,
-                     &A, &B);
+    evaluator->Evaluate(&x[0][0], &l[0][0],
+                        &cost, NULL,
+                        NULL, NULL,
+                        A.get() , B.get());
 
     typedef Eigen::SparseMatrix<double, Eigen::ColMajor> EigenSparseMatrix;
 
     // Convert the matrix to column major order as required by SparseQR.
-    EigenSparseMatrix sparse_jacobian =
+    EigenSparseMatrix sparse_jacobian_transpose =
         Eigen::MappedSparseMatrix<double, Eigen::RowMajor>(
-            B.num_rows, B.num_cols,
-            static_cast<int>(B.values.size()),
-            B.rows.data(), B.cols.data(), B.values.data());
+            B->num_rows(), B->num_cols(), B->num_nonzeros(),
+            B->mutable_rows(), B->mutable_cols(), B->mutable_values()).transpose();
 
     // A*P = Q*R,
     // P:=colsPermutation() for fill-reducing,
     // Q:=matrixQ() orthogonal matrix,
     // R:=matrixR().topLeftCorner(rank(), rank())
     Eigen::SparseQR<EigenSparseMatrix, Eigen::COLAMDOrdering<int> >
-        qr_solver(sparse_jacobian.transpose());
+        qr_solver(sparse_jacobian_transpose);
 
     if (qr_solver.info() != Eigen::Success) {
       LOG(ERROR) << "Eigen::SparseQR decomposition failed.";
     }
 
-    if (qr_solver.rank() < B.num_cols) {
+    if (qr_solver.rank() < B->num_cols()) {
       LOG(ERROR) << "Jacobian matrix is rank deficient. "
-                 << "Number of columns: " << B.num_cols
+                 << "Number of columns: " << B->num_cols()
                  << " rank: " << qr_solver.rank();
     }
     // Compute the inverse column permutation used by QR factorization.
@@ -495,7 +553,7 @@ TEST_F(GHProblemTest, dev)
     }
     std::cout<< R_inv << std::endl;
     std::cout<< qr_solver.matrixR().toDense()*R_inv << std::endl;
-
+#endif
 }
 
 
