@@ -33,6 +33,8 @@
 #include "ceres/problem.h"
 #include "ceres/problem_impl.h"
 
+#include "ceres/jet.h"
+
 #include "ceres/casts.h"
 #include "ceres/cost_function.h"
 #include "ceres/crs_matrix.h"
@@ -70,6 +72,13 @@
 #include "ceres/compressed_row_sparse_matrix.h"
 
 #include <glog/logging.h>
+
+#include <Eigen/StdVector>
+EIGEN_DEFINE_STL_VECTOR_SPECIALIZATION(Eigen::Vector3d)
+EIGEN_DEFINE_STL_VECTOR_SPECIALIZATION(Eigen::Matrix3d)
+
+#include <random>
+
 
 namespace ceres {
 
@@ -185,6 +194,8 @@ class GHProblemTest : public ::testing::Test {
     Eigen::VectorXd expect_residual_affine;
     double expect_cost_affine;
 };
+
+
 
 TEST_F(GHProblemTest, GaussHelmertConstraintFunction)
 {
@@ -556,5 +567,247 @@ TEST_F(GHProblemTest, dev)
 #endif
 }
 
+////////////////////////////////////////////////////////////////////////////
 
+template <typename T=double>
+Eigen::Matrix<T, 3, 3> skew(const Eigen::Matrix<T, 3, 1>& v){
+    Eigen::Matrix<T, 3, 3> ret;
+    ret << T(0), -v(2),  v(1),
+           v(2),  T(0), -v(0),
+          -v(1),  v(0),  T(0);
+    return ret;
+}
+
+// angle-axis to rotation matrix
+template <typename T>
+Eigen::Matrix<T, 3, 3> ax2Rot(const Eigen::Matrix<T, 3, 1>& r){
+    T p = r.norm();
+
+    if(abs(p).a < 1e-12) {
+        return Eigen::Matrix<T, 3, 3>::Identity();
+    } else {
+        Eigen::Matrix<T, 3, 3> S = skew<T>(r/p);
+        return Eigen::Matrix<T, 3, 3>::Identity() + sin(p)*S + ( T(1)-cos(p) )*S*S;
+    }
+}
+
+// template specialization because of the if-else branch
+template<>
+Eigen::Matrix<double, 3, 3> ax2Rot<double>(const Eigen::Matrix<double, 3, 1>& r){
+    double p = r.norm();
+
+    if(abs(p) < 1e-12) {
+        return Eigen::Matrix<double, 3, 3>::Identity();
+    } else {
+        Eigen::Matrix<double, 3, 3> S = skew<double>(r/p);
+        return  Eigen::Matrix<double, 3, 3>::Identity() + sin(p)*S + ( 1-cos(p) )*S*S;
+    }
+}
+
+// rotation matrix to angle-axis
+template <typename T>
+Eigen::Matrix<T, 3, 1> Rot2ax(const Eigen::Matrix<T, 3, 3>& R){
+    Eigen::Matrix<T, 3, 1> a;
+    a << R(2,1)-R(1,2),
+         R(0,2)-R(2,0),
+         R(1,0)-R(0,1);
+    T tr = R(0,0) + R(1,1) + R(2,2);
+    T an = a.norm();
+    T phi = atan2(an, tr-T(1));
+    if (abs(phi).a < 1e-12)
+        return Eigen::Matrix<T, 3, 1>::Zero();
+    else
+        return (phi/an)*a;
+}
+
+// template specialization because of the if-else branch
+template <>
+Eigen::Matrix<double, 3, 1> Rot2ax<double>(const Eigen::Matrix<double, 3, 3>& R){
+    Eigen::Matrix<double, 3, 1> a;
+    a << R(2,1)-R(1,2),
+         R(0,2)-R(2,0),
+         R(1,0)-R(0,1);
+    double tr = R(0,0) + R(1,1) + R(2,2);
+    double an = a.norm();
+    double phi = atan2(an, tr-1);
+    if (abs(phi) < 1e-12)   // difference is here
+        return Eigen::Matrix<double, 3, 1>::Zero();
+    else
+        return (phi/an)*a;
+}
+
+inline Eigen::Vector3d Rot2ax(const Eigen::Matrix3d& R){
+    return Rot2ax<double>(R);
+}
+inline Eigen::Matrix3d ax2Rot(const Eigen::Vector3d& r){
+    return ax2Rot<double>(r);
+}
+
+struct HandEyeConstraintFunctor {
+
+  template <typename T>
+  bool operator()(T const xi[3], T const eta[3],
+                  T const ta[3], T const ra[3],
+                  T const tb[3], T const rb[3],
+                  T cost[6]) const {
+      typedef Eigen::Matrix<T, 3, 1> Vector3T;
+      typedef Eigen::Matrix<T, 3, 3> Matrix3T;
+      typedef Eigen::Map<Vector3T> Vector3TRef;
+      typedef Eigen::Map<const Vector3T> ConstVector3TRef;
+
+      const Matrix3T R = ax2Rot<T>( ConstVector3TRef(eta) );
+      const Matrix3T Rb = ax2Rot<T>( ConstVector3TRef(rb) );
+
+      Vector3TRef res_t(cost),  res_r(cost+3);
+      res_t = ConstVector3TRef(xi) - Rb*ConstVector3TRef(xi) + R*ConstVector3TRef(ta) - ConstVector3TRef(tb);
+      res_r = R*ConstVector3TRef(ra) - ConstVector3TRef(rb);
+
+//      Eigen::Map<Eigen::Matrix<T,6,1>> res(cost);
+//      res.template segment<3>(0) = ConstVector3TRef(xi) - Rb*ConstVector3TRef(xi) + R*ConstVector3TRef(ta) - ConstVector3TRef(tb);
+//      res.template segment<3>(3) = R*ConstVector3TRef(ra) - ConstVector3TRef(rb);
+      return true;
+  }
+
+  static GaussHelmertConstraintFunction* create() {
+    return new AutoDiffGaussHelmertConstraintFunction<HandEyeConstraintFunctor, 6, 2, 3, 3, 3, 3, 3, 3>(
+        new HandEyeConstraintFunctor());
+  }
+
+};
+
+
+
+class HandEyeProblemTest : public ::testing::Test {
+    virtual void SetUp() {
+
+    }
+public:
+    void InitTrajectories(size_t num_sensors, size_t num_movements) {
+        CHECK_GT(num_sensors, 1);
+
+        std::mt19937 gen(0); //Standard mersenne_twister_engine seeded with 0
+        std::uniform_real_distribution<> angle_rnd(0, 3.14159);
+
+        /* 1. init ground truth parameters */
+        xi.resize(num_sensors-1);
+        eta.resize(num_sensors-1);
+        for(size_t i=0; i<num_sensors-1; i++) {
+            xi[i].setRandom();
+            Eigen::Vector3d direction = Eigen::Vector3d::Random().normalized();
+            eta[i] =  angle_rnd(gen)*direction;
+        }
+
+        std::vector<Eigen::Matrix3d> R(num_sensors-1);
+        for(size_t i=0; i<num_sensors-1; i++) {
+            R[i]   =  ax2Rot(eta[i]);
+        }
+
+        /* 2. init base sensor's trajectory randomly and compute other sensors'
+         * trajectories base on it.  */
+        r.resize(num_sensors);
+        t.resize(num_sensors);
+        for(size_t i=0; i<num_sensors; i++) {
+            r[i].resize(num_movements);
+            t[i].resize(num_movements);
+            for(size_t j=0; j<num_movements; j++)
+            {
+                if(i==0) {
+                    t[0][j].setRandom();
+                    Eigen::Vector3d direction = Eigen::Vector3d::Random().normalized();
+                    r[0][j] =  angle_rnd(gen)*direction;
+                } else {
+                    r[i][j] =  R[i-1] * r[0][j];
+                    t[i][j] = xi[i-1] + R[i-1]*t[0][j] - ax2Rot(r[i][j])*xi[i-1];
+                }
+            } // each j
+        } // each i
+    }
+
+    size_t NumSensors() {
+        return r.size();
+    }
+
+    size_t NumMovements() {
+        return (r.size()>0)? r[0].size() : 0;
+    }
+
+public:
+    std::vector<Eigen::Vector3d> xi, eta;
+    std::vector<std::vector<Eigen::Vector3d>> r, t;
+};
+
+TEST_F(HandEyeProblemTest, AngleAxisAndRotationMatrix)
+{
+    // normal mode: double
+    Eigen::Vector3d v_double;
+    v_double << 0.5, 0.1, 0.2;
+    std::cout<< ax2Rot(v_double) <<std::endl;
+    std::cout<< Rot2ax(ax2Rot(v_double)) <<std::endl;
+    EXPECT_TRUE(Rot2ax(ax2Rot(v_double)).isApprox(v_double,1e-10));
+
+    // ad mode: Jet
+    typedef ceres::Jet<double, 3> jet;
+    Eigen::Matrix<jet, 3, 1> v_jet;
+    v_jet << jet(0.5), jet(0.1), jet(0.2);
+
+    Eigen::Matrix<jet, 3, 3> ret1 = ax2Rot< jet >( v_jet );
+    Eigen::Matrix<jet, 3, 1> ret2 = Rot2ax< jet >( ret1 );
+
+    std::cout<< ret2(0).a << ret2(1).a << ret2(2).a <<std::endl;
+}
+
+
+TEST_F(HandEyeProblemTest, HandEyeProblem)
+{
+    const size_t num_sensors = 2;
+    const size_t num_movements = 1;
+    InitTrajectories(num_sensors, num_movements);
+
+    GHProblem problem;
+    for(size_t i=1; i<num_sensors; i++)
+        for(size_t j=0; j<num_movements; j++)
+            problem.AddConstraintBlock(HandEyeConstraintFunctor::create(), NULL,
+                                       xi[i-1].data(), eta[i-1].data(),
+                                        t[0][j].data(), r[0][j].data(),
+                                        t[i][j].data(), r[i][j].data());
+
+    double cost;
+    std::vector<double> residual, gradient_p, gradient_o;
+    CRSMatrix A,B;
+    Matrix A_dense, B_dense;
+
+    problem.Evaluate(GHProblem::EvaluateOptions(),
+                     &cost, &residual,
+                     &gradient_p, &gradient_o,
+                     &A, &B);
+
+    CRSMatrixToDenseMatrix(A, &A_dense);
+    CRSMatrixToDenseMatrix(B, &B_dense);
+    std::cout<< cost << std::endl;
+    std::cout<< A_dense << std::endl;
+    std::cout<< B_dense << std::endl;
+
+
+
+//    GHProgram* program = problem.mutable_program();
+//    program->SetParameterOffsetsAndIndex();
+//    program->SetObservationOffsetsAndIndex();
+
+//    GHEvaluator::Options options;
+//    std::string error;
+//    options.linear_solver_type = DENSE_QR;
+//    scoped_ptr<GHEvaluator> evaluator(GHEvaluator::Create(options, program, &error));
+//    scoped_ptr<DenseSparseMatrix> A(down_cast<DenseSparseMatrix*>(evaluator->CreateJacobian_p()));
+//    scoped_ptr<DenseSparseMatrix> B(down_cast<DenseSparseMatrix*>(evaluator->CreateJacobian_o()));
+
+//    double cost;
+//    Vector residual(program->NumResiduals());
+
+//    evaluator->Evaluate(parameters.data(), observations.data(),
+//            &cost, residual.data(),
+//            NULL, NULL,
+//            A.get() , B.get());
+
+
+}
 }  // namespace ceres
