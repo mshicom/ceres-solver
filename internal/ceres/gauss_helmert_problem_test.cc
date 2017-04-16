@@ -257,11 +257,19 @@ TEST_F(GHProblemTest, AutoDiffGaussHelmertConstraintFunction)
   constraint_function->Evaluate(parameters, observations, residuals, NULL, jacobians_o);
   EXPECT_TRUE( ( B - affine_B ).squaredNorm() < 1e-10 );
 
-  VectorRef(residuals, 4).setZero(); A.setZero(); B.setZero();
+  VectorRef(residuals, 4).setConstant(-1); A.setConstant(-1); B.setConstant(-1);
   constraint_function->Evaluate(parameters, observations, residuals, jacobians_p, jacobians_o);
   EXPECT_TRUE( ( ConstVectorRef(residuals, 4)- expect_residual_affine ).squaredNorm() < 1e-10 );
   EXPECT_TRUE( ( A - affine_A ).squaredNorm() < 1e-10 );
   EXPECT_TRUE( ( B - affine_B ).squaredNorm() < 1e-10 );
+
+  VectorRef(residuals, 4).setConstant(-1); A.setConstant(-1); B.setConstant(-1);
+  constraint_function->Evaluate(parameters, observations, residuals, jacobians_p);
+  std::cout << ConstVectorRef(residuals, 4) << std::endl;
+  std::cout << A << std::endl;
+  EXPECT_TRUE( ( ConstVectorRef(residuals, 4)- expect_residual_affine ).squaredNorm() < 1e-10 );
+  EXPECT_TRUE( ( A - affine_A ).squaredNorm() < 1e-10 );
+
 }
 
 TEST_F(GHProblemTest, GHConstraintBlock)

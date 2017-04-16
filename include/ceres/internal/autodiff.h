@@ -176,11 +176,22 @@ inline void Make1stOrderPerturbation(int offset, const T* src, JetT* dst) {
   }
 }
 
+template <typename JetT, typename T, int N>
+inline void MakeDefaultJet(const T* src, JetT* dst) {
+  DCHECK(src);
+  DCHECK(dst);
+  for (int j = 0; j < N; ++j) {
+    dst[j].a = src[j];
+    dst[j].v.setZero();
+  }
+}
+
 // Takes the 0th order part of src, assumed to be a Jet type, and puts it in
 // dst. This is used to pick out the "vector" part of the extended y.
 template <typename JetT, typename T>
-inline void Take0thOrderPart(int M, const JetT *src, T dst) {
+inline void Take0thOrderPart(int M, const JetT *src, T *dst) {
   DCHECK(src);
+  DCHECK(dst);
   for (int i = 0; i < M; ++i) {
     dst[i] = src[i].a;
   }
@@ -319,6 +330,127 @@ template <typename Functor, typename T, int k2Start,
           int N0 = 0, int N1 = 0, int N2 = 0, int N3 = 0, int N4 = 0,
           int N5 = 0, int N6 = 0, int N7 = 0, int N8 = 0, int N9 = 0>
 struct AutoDiff2 {
+  static bool DifferentiateParameterOnly(const Functor& functor,
+                            T const *const *parameters_1,
+                            T const *const *parameters_2,
+                            int num_outputs,
+                            T *function_value,
+                            T **jacobians_1) {
+    // This block breaks the 80 column rule to keep it somewhat readable.
+    DCHECK_GT(num_outputs, 0);
+    DCHECK((!N1 && !N2 && !N3 && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||
+           ((N1 > 0) && !N2 && !N3 && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||
+           ((N1 > 0) && (N2 > 0) && !N3 && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||                                   // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||                              // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && !N5 && !N6 && !N7 && !N8 && !N9) ||                         // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && !N6 && !N7 && !N8 && !N9) ||                    // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && !N7 && !N8 && !N9) ||               // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && (N7 > 0) && !N8 && !N9) ||          // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && (N7 > 0) && (N8 > 0) && !N9) ||     // NOLINT
+           ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && (N7 > 0) && (N8 > 0) && (N9 > 0)))  // NOLINT
+        << "Zero block cannot precede a non-zero block. Block sizes are "
+        << "(ignore trailing 0s): " << N0 << ", " << N1 << ", " << N2 << ", "
+        << N3 << ", " << N4 << ", " << N5 << ", " << N6 << ", " << N7 << ", "
+        << N8 << ", " << N9;
+
+    enum{ PSize   = ( 9<k2Start? N9 : 0)
+                   +( 8<k2Start? N8 : 0)
+                   +( 7<k2Start? N7 : 0)
+                   +( 6<k2Start? N6 : 0)
+                   +( 5<k2Start? N5 : 0)
+                   +( 4<k2Start? N4 : 0)
+                   +( 3<k2Start? N3 : 0)
+                   +( 2<k2Start? N2 : 0)
+                   +( 1<k2Start? N1 : 0)
+                   +N0 };
+
+    typedef Jet<T, PSize> JetT;
+    FixedArray<JetT, (256 * 7) / sizeof(JetT)> x(
+          N0 + N1 + N2 + N3 + N4 + N5 + N6 + N7 + N8 + N9 + num_outputs);
+
+    // These are the positions of the respective jets in the fixed array x.
+    const int jet0  = 0;
+    const int jet1  = N0;
+    const int jet2  = N0 + N1;
+    const int jet3  = N0 + N1 + N2;
+    const int jet4  = N0 + N1 + N2 + N3;
+    const int jet5  = N0 + N1 + N2 + N3 + N4;
+    const int jet6  = N0 + N1 + N2 + N3 + N4 + N5;
+    const int jet7  = N0 + N1 + N2 + N3 + N4 + N5 + N6;
+    const int jet8  = N0 + N1 + N2 + N3 + N4 + N5 + N6 + N7;
+    const int jet9  = N0 + N1 + N2 + N3 + N4 + N5 + N6 + N7 + N8;
+
+    const JetT *unpacked_parameters[10] = {
+        x.get() + jet0,
+        x.get() + jet1,
+        x.get() + jet2,
+        x.get() + jet3,
+        x.get() + jet4,
+        x.get() + jet5,
+        x.get() + jet6,
+        x.get() + jet7,
+        x.get() + jet8,
+        x.get() + jet9,
+    };
+
+    JetT* output = x.get() + N0 + N1 + N2 + N3 + N4 + N5 + N6 + N7 + N8 + N9;
+
+#define CERES_MAKE_1ST_ORDER_PERTURBATION(i)                            \
+    if(N ## i ) {                                                       \
+      if( i<k2Start) {                                                  \
+        internal::Make1stOrderPerturbation<JetT, T, N ## i>(            \
+          jet ## i,                                                     \
+          parameters_1[i],                                              \
+          x.get() + jet ## i);                                          \
+      } else {                                                          \
+        internal::MakeDefaultJet<JetT, T, N ## i>(                      \
+          parameters_2[i-k2Start],                                      \
+          x.get() + jet ## i);                                          \
+      }                                                                 \
+    }
+
+    CERES_MAKE_1ST_ORDER_PERTURBATION(0);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(1);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(2);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(3);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(4);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(5);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(6);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(7);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(8);
+    CERES_MAKE_1ST_ORDER_PERTURBATION(9);
+#undef CERES_MAKE_1ST_ORDER_PERTURBATION
+
+    if (!VariadicEvaluate<Functor, JetT,
+                          N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>::Call(
+        functor, unpacked_parameters, output)) {
+      return false;
+    }
+
+    internal::Take0thOrderPart(num_outputs, output, function_value);
+
+#define CERES_TAKE_1ST_ORDER_PERTURBATION(i)                        \
+    if (N ## i && i<k2Start)                                        \
+         if (jacobians_1 && jacobians_1[i])                         \
+                internal::Take1stOrderPart<JetT, T,                 \
+                                           jet ## i,                \
+                                           N ## i>(num_outputs,     \
+                                                   output,          \
+                                                   jacobians_1[i]);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(0);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(1);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(2);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(3);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(4);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(5);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(6);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(7);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(8);
+    CERES_TAKE_1ST_ORDER_PERTURBATION(9);
+#undef CERES_TAKE_1ST_ORDER_PERTURBATION
+    return true;
+  }
+
   static bool Differentiate(const Functor& functor,
                             T const *const *parameters_1,
                             T const *const *parameters_2,
