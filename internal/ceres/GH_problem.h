@@ -83,48 +83,10 @@ class GHProblem {
       LossFunction* loss_function,
       const std::vector<double*>& parameter_blocks,
       const std::vector<double*>& observation_blocks);
-//  ResidualBlockId AddResidualBlock(CostFunction* cost_function,
-//                                   LossFunction* loss_function,
-//                                   double* x0);
-//  ResidualBlockId AddResidualBlock(CostFunction* cost_function,
-//                                   LossFunction* loss_function,
-//                                   double* x0, double* x1);
-//  ResidualBlockId AddResidualBlock(CostFunction* cost_function,
-//                                   LossFunction* loss_function,
-//                                   double* x0, double* x1, double* x2);
-//  ResidualBlockId AddResidualBlock(CostFunction* cost_function,
-//                                   LossFunction* loss_function,
-//                                   double* x0, double* x1, double* x2,
-//                                   double* x3);
-//  ResidualBlockId AddResidualBlock(CostFunction* cost_function,
-//                                   LossFunction* loss_function,
-//                                   double* x0, double* x1, double* x2,
-//                                   double* x3, double* x4);
-//  ResidualBlockId AddResidualBlock(CostFunction* cost_function,
-//                                   LossFunction* loss_function,
-//                                   double* x0, double* x1, double* x2,
-//                                   double* x3, double* x4, double* x5);
-//  ResidualBlockId AddResidualBlock(CostFunction* cost_function,
-//                                   LossFunction* loss_function,
-//                                   double* x0, double* x1, double* x2,
-//                                   double* x3, double* x4, double* x5,
-//                                   double* x6);
-//  ResidualBlockId AddResidualBlock(CostFunction* cost_function,
-//                                   LossFunction* loss_function,
-//                                   double* x0, double* x1, double* x2,
-//                                   double* x3, double* x4, double* x5,
-//                                   double* x6, double* x7);
-//  ResidualBlockId AddResidualBlock(CostFunction* cost_function,
-//                                   LossFunction* loss_function,
-//                                   double* x0, double* x1, double* x2,
-//                                   double* x3, double* x4, double* x5,
-//                                   double* x6, double* x7, double* x8);
-//  ResidualBlockId AddResidualBlock(CostFunction* cost_function,
-//                                   LossFunction* loss_function,
-//                                   double* x0, double* x1, double* x2,
-//                                   double* x3, double* x4, double* x5,
-//                                   double* x6, double* x7, double* x8,
-//                                   double* x9);
+
+  GHConstraintBlock* AddConstraintBlock(GaussHelmertConstraintFunction* constraint_function,
+      LossFunction* loss_function, ...);
+
   void AddParameterBlock(double* values, int size);
   void AddParameterBlock(double* values,
                          int size,

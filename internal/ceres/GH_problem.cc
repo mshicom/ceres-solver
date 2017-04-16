@@ -31,6 +31,7 @@
 
 #include "ceres/GH_problem.h"
 
+#include <cstdarg>
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
@@ -432,148 +433,32 @@ GHConstraintBlock* GHProblem::AddConstraintBlock(
   return new_constraint_block;
 }
 
-#if 0
-// Unfortunately, macros don't help much to reduce this code, and var args don't
-// work because of the ambiguous case that there is no loss function.
-ResidualBlock* GHProblem::AddResidualBlock(
-    CostFunction* cost_function,
+
+GHConstraintBlock* GHProblem::AddConstraintBlock(
+    GaussHelmertConstraintFunction* constraint_function,
     LossFunction* loss_function,
-    double* x0) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
+    ...) {
+
+    const size_t num_parameter_blocks = constraint_function->parameter_block_sizes().size();
+    const size_t num_observation_blocks = constraint_function->observation_block_sizes().size();
+
+    vector<double*> parameters(num_parameter_blocks);
+    vector<double*> observations(num_observation_blocks);
+
+    va_list arguments;                     // A place to store the list of arguments
+    va_start ( arguments, loss_function );           // Initializing arguments to store all values after loss_function
+    for(size_t i=0; i < num_parameter_blocks; i++) {
+        parameters[i] = va_arg ( arguments, double* );
+    }
+
+    for(size_t i=0; i < num_observation_blocks; i++) {
+        observations[i] = va_arg ( arguments, double* );
+    }
+    va_end ( arguments );                  // Cleans up the list
+
+    return AddConstraintBlock(constraint_function, loss_function, parameters, observations);
 }
 
-ResidualBlock* GHProblem::AddResidualBlock(
-    CostFunction* cost_function,
-    LossFunction* loss_function,
-    double* x0, double* x1) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
-}
-
-ResidualBlock* GHProblem::AddResidualBlock(
-    CostFunction* cost_function,
-    LossFunction* loss_function,
-    double* x0, double* x1, double* x2) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
-}
-
-ResidualBlock* GHProblem::AddResidualBlock(
-    CostFunction* cost_function,
-    LossFunction* loss_function,
-    double* x0, double* x1, double* x2, double* x3) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
-}
-
-ResidualBlock* GHProblem::AddResidualBlock(
-    CostFunction* cost_function,
-    LossFunction* loss_function,
-    double* x0, double* x1, double* x2, double* x3, double* x4) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
-}
-
-ResidualBlock* GHProblem::AddResidualBlock(
-    CostFunction* cost_function,
-    LossFunction* loss_function,
-    double* x0, double* x1, double* x2, double* x3, double* x4, double* x5) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  residual_parameters.push_back(x5);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
-}
-
-ResidualBlock* GHProblem::AddResidualBlock(
-    CostFunction* cost_function,
-    LossFunction* loss_function,
-    double* x0, double* x1, double* x2, double* x3, double* x4, double* x5,
-    double* x6) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  residual_parameters.push_back(x5);
-  residual_parameters.push_back(x6);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
-}
-
-ResidualBlock* GHProblem::AddResidualBlock(
-    CostFunction* cost_function,
-    LossFunction* loss_function,
-    double* x0, double* x1, double* x2, double* x3, double* x4, double* x5,
-    double* x6, double* x7) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  residual_parameters.push_back(x5);
-  residual_parameters.push_back(x6);
-  residual_parameters.push_back(x7);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
-}
-
-ResidualBlock* GHProblem::AddResidualBlock(
-    CostFunction* cost_function,
-    LossFunction* loss_function,
-    double* x0, double* x1, double* x2, double* x3, double* x4, double* x5,
-    double* x6, double* x7, double* x8) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  residual_parameters.push_back(x5);
-  residual_parameters.push_back(x6);
-  residual_parameters.push_back(x7);
-  residual_parameters.push_back(x8);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
-}
-
-ResidualBlock* GHProblem::AddResidualBlock(
-    CostFunction* cost_function,
-    LossFunction* loss_function,
-    double* x0, double* x1, double* x2, double* x3, double* x4, double* x5,
-    double* x6, double* x7, double* x8, double* x9) {
-  vector<double*> residual_parameters;
-  residual_parameters.push_back(x0);
-  residual_parameters.push_back(x1);
-  residual_parameters.push_back(x2);
-  residual_parameters.push_back(x3);
-  residual_parameters.push_back(x4);
-  residual_parameters.push_back(x5);
-  residual_parameters.push_back(x6);
-  residual_parameters.push_back(x7);
-  residual_parameters.push_back(x8);
-  residual_parameters.push_back(x9);
-  return AddResidualBlock(cost_function, loss_function, residual_parameters);
-}
-#endif
 
 void GHProblem::AddParameterBlock(double* values, int size) {
   InternalAddParameterBlock(values, size);
