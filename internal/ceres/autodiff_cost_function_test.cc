@@ -141,6 +141,129 @@ TEST(AutodiffCostFunction, ManyParameterAutodiffInstantiates) {
   delete[] parameters;
   delete cost_function;
 }
+//////////////////////////////////////////////////
 
+class BinaryScalarRelation {
+ public:
+  explicit BinaryScalarRelation( ) {}
+  template <typename T>
+  bool operator()(const T* const x, const T* const y,
+                  const T* const a,
+                  T* cost) const {
+    cost[0] = x[0] * y[0] + x[1] * y[1] - a[0];
+    return true;
+  }
+};
+
+TEST(AutodiffRelationFunction, BilinearDifferentiationTest) {
+  RelationFunction* relation_function  =
+    new AutoDiffRelationFunction<BinaryScalarRelation, 1, 2, 2, 2, 1>(
+        new BinaryScalarRelation());
+
+  double** parameters = new double*[2];
+  parameters[0] = new double[2];
+  parameters[1] = new double[2];
+
+  parameters[0][0] = 1;
+  parameters[0][1] = 2;
+
+  parameters[1][0] = 3;
+  parameters[1][1] = 4;
+
+  double** observations = new double*[1];
+  observations[0] = new double;
+  observations[0][0] = 1.0;
+
+  double** jacobians_p = new double*[2];
+  jacobians_p[0] = new double[2];
+  jacobians_p[1] = new double[2];
+
+  double** jacobians_o = new double*[1];
+  jacobians_o[0] = new double;
+
+  double residuals = 0.0;
+
+  relation_function->Evaluate(parameters, observations, &residuals, NULL, NULL);
+  EXPECT_EQ(10.0, residuals);
+
+  relation_function->Evaluate(parameters, observations, &residuals, jacobians_p, NULL);
+  EXPECT_EQ(3, jacobians_p[0][0]);
+  EXPECT_EQ(4, jacobians_p[0][1]);
+  EXPECT_EQ(1, jacobians_p[1][0]);
+  EXPECT_EQ(2, jacobians_p[1][1]);
+
+  relation_function->Evaluate(parameters, observations, &residuals, jacobians_p, jacobians_o);
+  EXPECT_EQ(3, jacobians_p[0][0]);
+  EXPECT_EQ(4, jacobians_p[0][1]);
+  EXPECT_EQ(1, jacobians_p[1][0]);
+  EXPECT_EQ(2, jacobians_p[1][1]);
+  EXPECT_EQ(-1, jacobians_o[0][0]);
+
+  delete[] jacobians_o[0];
+  delete[] jacobians_o;
+  delete[] observations[0];
+  delete[] observations;
+  delete[] jacobians_p[0];
+  delete[] jacobians_p[1];
+  delete[] parameters[0];
+  delete[] parameters[1];
+  delete[] jacobians_p;
+  delete[] parameters;
+  delete relation_function;
+}
+
+struct TenParameterRelation {
+  template <typename T>
+  bool operator()(const T* const x0,
+                  const T* const x1,
+                  const T* const x2,
+                  const T* const x3,
+                  const T* const x4,
+                  const T* const x5,
+                  const T* const x6,
+                  const T* const x7,
+                  const T* const x8,
+                  const T* const x9,
+                  T* cost) const {
+    cost[0] = *x0 + *x1 + *x2 + *x3 + *x4 + *x5 + *x6 + *x7 + *x8 + *x9;
+    return true;
+  }
+};
+
+TEST(AutodiffRelationFunction, ManyParameterAutodiffInstantiates) {
+  RelationFunction* relation_function  =
+      new AutoDiffRelationFunction<
+          TenParameterRelation, 1, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>(
+              new TenParameterRelation);
+
+  double** parameters = new double*[10];
+  double** observations = &parameters[5];
+  double** jacobians_p = new double*[10];
+  double** jacobians_o = &jacobians_p[5];
+  for (int i = 0; i < 10; ++i) {
+    parameters[i] = new double[1];
+    parameters[i][0] = i;
+    jacobians_p[i] = new double[1];
+  }
+
+  double residuals = 0.0;
+
+  relation_function->Evaluate(parameters, observations, &residuals, NULL, NULL);
+  EXPECT_EQ(45.0, residuals);
+
+  relation_function->Evaluate(parameters, observations, &residuals, jacobians_p, jacobians_o);
+  EXPECT_EQ(residuals, 45.0);
+  for (int i = 0; i < 10; ++i) {
+    EXPECT_EQ(1.0, jacobians_p[i][0]);
+  }
+
+  for (int i = 0; i < 10; ++i) {
+    delete[] jacobians_p[i];
+    delete[] parameters[i];
+  }
+  delete[] jacobians_p;
+  delete[] parameters;
+  delete relation_function;
+}
 }  // namespace internal
 }  // namespace ceres
