@@ -42,6 +42,7 @@
 #include "ceres/internal/scoped_ptr.h"
 #include "ceres/stringprintf.h"
 #include "ceres/types.h"
+#include "ceres/casts.h"
 
 namespace ceres {
 
@@ -50,6 +51,7 @@ class LossFunction;
 namespace internal {
 
 class ParameterBlock;
+class ObservationBlock;
 
 // A term in the least squares problem. The mathematical form of each term in
 // the overall least-squares cost function is:
@@ -72,6 +74,12 @@ class ResidualBlock {
   ResidualBlock(const CostFunction* cost_function,
                 const LossFunction* loss_function,
                 const std::vector<ParameterBlock*>& parameter_blocks,
+                int index);
+
+  ResidualBlock(const RelationFunction* constraint_function,
+                const LossFunction* loss_function,
+                const std::vector<ParameterBlock*>& parameter_blocks,
+                const std::vector<ObservationBlock*>& observation_blocks,
                 int index);
 
   // Evaluates the residual term, storing the scalar cost in *cost, the residual
@@ -99,12 +107,24 @@ class ResidualBlock {
   bool Evaluate(bool apply_loss_function,
                 double* cost,
                 double* residuals,
-                double** jacobians,
+                double** jacobians_p,
+                double** jacobians_o,
                 double* scratch) const;
 
+  bool Evaluate(bool apply_loss_function,
+                double* cost,
+                double* residuals,
+                double** jacobians_p,
+                double* scratch) const {
+      return Evaluate(apply_loss_function, cost, residuals, jacobians_p, NULL, scratch);
+  }
 
-  const CostFunction* cost_function() const { return cost_function_; }
-  const LossFunction* loss_function() const { return loss_function_; }
+  const CostFunction* cost_function() const {
+      return down_cast<const CostFunction*>(cost_function_);
+  }
+
+  const RelationFunction* relation_function() const { return cost_function_; }
+  const LossFunction* loss_function() const { return loss_function_;  }
 
   // Access the parameter blocks for this residual. The array has size
   // NumParameterBlocks().
@@ -115,6 +135,14 @@ class ResidualBlock {
   // Number of variable blocks that this residual term depends on.
   int NumParameterBlocks() const {
     return cost_function_->parameter_block_sizes().size();
+  }
+
+  ObservationBlock* const* observation_blocks() const {
+    return observation_blocks_.get();
+  }
+
+  int NumObservationBlocks() const {
+    return cost_function_->observation_block_sizes().size();
   }
 
   // The size of the residual vector returned by this residual function.
@@ -131,10 +159,15 @@ class ResidualBlock {
     return StringPrintf("{residual block; index=%d}", index_);
   }
 
+  bool HasObservationBlock() const {
+      return cost_function_->HasObservationBlock();
+  }
+
  private:
-  const CostFunction* cost_function_;
+  const RelationFunction* cost_function_;
   const LossFunction* loss_function_;
   scoped_array<ParameterBlock*> parameter_blocks_;
+  scoped_array<ObservationBlock*> observation_blocks_;
 
   // The index of the residual, typically in a Program. This is only to permit
   // switching from a ResidualBlock* to an index in the Program's array, needed

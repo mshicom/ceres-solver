@@ -55,24 +55,29 @@ class ResidualBlock;
 void InvalidateEvaluation(const ResidualBlock& block,
                           double* cost,
                           double* residuals,
-                          double** jacobians);
+                          double** jacobians_p,
+                          double** jacobians_o);
 
 // Check if any of the arrays cost, residuals or jacobians contains an
 // NaN, return true if it does.
 bool IsEvaluationValid(const ResidualBlock& block,
                        double const* const* parameters,
+                       double const* const* observations,
                        double* cost,
                        double* residuals,
-                       double** jacobians);
+                       double** jacobians_p,
+                       double** jacobians_o);
 
 // Create a string representation of the Residual block containing the
 // value of the parameters, residuals and jacobians if present.
 // Useful for debugging output.
 std::string EvaluationToString(const ResidualBlock& block,
                                double const* const* parameters,
+                               double const* const* observations,
                                double* cost,
                                double* residuals,
-                               double** jacobians);
+                               double** jacobians_p,
+                               double** jacobians_o);
 
 }  // namespace internal
 }  // namespace ceres

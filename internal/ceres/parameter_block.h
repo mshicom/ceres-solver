@@ -305,7 +305,7 @@ class ParameterBlock {
     }
   }
 
- private:
+protected:
   void Init(double* user_state,
             int size,
             int index,
@@ -399,6 +399,41 @@ class ParameterBlock {
 
   // Necessary so ProblemImpl can clean up the parameterizations.
   friend class ProblemImpl;
+};
+
+class ObservationBlock : public ParameterBlock
+{
+public:
+    ObservationBlock(double* user_state,
+                   int size,
+                   int index,
+                   LocalParameterization* local_parameterization = NULL)
+        :ParameterBlock(user_state, size, index, local_parameterization),
+         state_residual_(new double[size]) {
+        ceres::VectorRef(state_residual_.get(), size_).setZero();
+    }
+
+    bool SetCovariance(const Matrix& covariance_matrix){
+          CHECK_EQ(covariance_matrix.cols(), size_)
+                  << "the size of covariance matrix does not match";
+          CHECK_EQ(covariance_matrix.rows(), size_)
+                  << "the size of covariance matrix does not match";
+          covariance_matrix_.resize(size_, size_);
+          covariance_matrix_ = covariance_matrix;
+          return true;
+    }
+
+    const Matrix& Covariance() const{
+        return covariance_matrix_;
+    }
+
+    bool HasCovariance() {
+        return covariance_matrix_.size() > 0;
+    }
+
+protected:
+    Matrix covariance_matrix_;
+    scoped_array<double> state_residual_;
 };
 
 }  // namespace internal

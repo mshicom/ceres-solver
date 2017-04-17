@@ -49,42 +49,52 @@ using std::string;
 void InvalidateEvaluation(const ResidualBlock& block,
                           double* cost,
                           double* residuals,
-                          double** jacobians) {
+                          double** jacobians_p,
+                          double** jacobians_o) {
   const int num_parameter_blocks = block.NumParameterBlocks();
+  const int num_observation_blocks = block.NumObservationBlocks();
   const int num_residuals = block.NumResiduals();
 
   InvalidateArray(1, cost);
   InvalidateArray(num_residuals, residuals);
-  if (jacobians != NULL) {
+  if (jacobians_p != NULL) {
     for (int i = 0; i < num_parameter_blocks; ++i) {
       const int parameter_block_size = block.parameter_blocks()[i]->Size();
-      InvalidateArray(num_residuals * parameter_block_size, jacobians[i]);
+      InvalidateArray(num_residuals * parameter_block_size, jacobians_p[i]);
+    }
+  }
+  if (jacobians_o != NULL) {
+    for (int i = 0; i < num_observation_blocks; ++i) {
+      const int observation_block_size = block.observation_blocks()[i]->Size();
+      InvalidateArray(num_residuals * observation_block_size, jacobians_o[i]);
     }
   }
 }
 
 string EvaluationToString(const ResidualBlock& block,
                           double const* const* parameters,
+                          double const* const* observations,
                           double* cost,
                           double* residuals,
-                          double** jacobians) {
+                          double** jacobians_p,
+                          double** jacobians_o) {
   CHECK_NOTNULL(cost);
   CHECK_NOTNULL(residuals);
 
   const int num_parameter_blocks = block.NumParameterBlocks();
+  const int num_observation_blocks = block.NumObservationBlocks();
   const int num_residuals = block.NumResiduals();
   string result = "";
 
-  StringAppendF(&result,
-                "Residual Block size: %d parameter blocks x %d residuals\n\n",
-                num_parameter_blocks, num_residuals);
+  StringAppendF(&result, "Constraint Block size: %d parameter blocks x %d observation blocks x %d residuals\n\n",
+                num_parameter_blocks, num_observation_blocks, num_residuals);
   result +=
       "For each parameter block, the value of the parameters are printed in the first column   \n"  // NOLINT
       "and the value of the jacobian under the corresponding residual. If a ParameterBlock was \n"  // NOLINT
       "held constant then the corresponding jacobian is printed as 'Not Computed'. If an entry \n"  // NOLINT
       "of the Jacobian/residual array was requested but was not written to by user code, it is \n"  // NOLINT
       "indicated by 'Uninitialized'. This is an error. Residuals or Jacobian values evaluating \n"  // NOLINT
-      "to Inf or NaN is also an error.  \n\n"; // NOLINT
+      "to Inf or NaN is also an error.  \n\n";                                                      // NOLINT
 
   string space = "Residuals:     ";
   result += space;
@@ -93,18 +103,33 @@ string EvaluationToString(const ResidualBlock& block,
 
   for (int i = 0; i < num_parameter_blocks; ++i) {
     const int parameter_block_size = block.parameter_blocks()[i]->Size();
-    StringAppendF(
-        &result, "Parameter Block %d, size: %d\n", i, parameter_block_size);
+    StringAppendF(&result, "Parameter Block %d, size: %d\n", i, parameter_block_size);
     StringAppendF(&result, "\n");
     for (int j = 0; j < parameter_block_size; ++j) {
       AppendArrayToString(1, parameters[i] + j, &result);
       StringAppendF(&result, "| ");
       for (int k = 0; k < num_residuals; ++k) {
-        AppendArrayToString(1,
-                            (jacobians != NULL && jacobians[i] != NULL)
-                            ? jacobians[i] + k * parameter_block_size + j
-                            : NULL,
-                            &result);
+        AppendArrayToString(
+            1, (jacobians_p != NULL && jacobians_p[i] != NULL) ? jacobians_p[i] + k * parameter_block_size + j : NULL,
+            &result);
+      }
+      StringAppendF(&result, "\n");
+    }
+    StringAppendF(&result, "\n");
+  }
+  StringAppendF(&result, "\n");
+
+  for (int i = 0; i < num_observation_blocks; ++i) {
+    const int observation_block_size = block.observation_blocks()[i]->Size();
+    StringAppendF(&result, "Observation Block %d, size: %d\n", i, observation_block_size);
+    StringAppendF(&result, "\n");
+    for (int j = 0; j < observation_block_size; ++j) {
+      AppendArrayToString(1, observations[i] + j, &result);
+      StringAppendF(&result, "| ");
+      for (int k = 0; k < num_residuals; ++k) {
+        AppendArrayToString(
+            1, (jacobians_o != NULL && jacobians_o[i] != NULL) ? jacobians_o[i] + k * observation_block_size + j : NULL,
+            &result);
       }
       StringAppendF(&result, "\n");
     }
@@ -116,27 +141,37 @@ string EvaluationToString(const ResidualBlock& block,
 
 bool IsEvaluationValid(const ResidualBlock& block,
                        double const* const* parameters,
+                       double const* const* observations,
                        double* cost,
                        double* residuals,
-                       double** jacobians) {
+                       double** jacobians_p,
+                       double** jacobians_o) {
   const int num_parameter_blocks = block.NumParameterBlocks();
+  const int num_observation_blocks = block.NumObservationBlocks();
   const int num_residuals = block.NumResiduals();
 
   if (!IsArrayValid(num_residuals, residuals)) {
     return false;
   }
 
-  if (jacobians != NULL) {
+  if (jacobians_p != NULL) {
     for (int i = 0; i < num_parameter_blocks; ++i) {
       const int parameter_block_size = block.parameter_blocks()[i]->Size();
-      if (!IsArrayValid(num_residuals * parameter_block_size, jacobians[i])) {
+      if (!IsArrayValid(num_residuals * parameter_block_size, jacobians_p[i])) {
         return false;
       }
     }
   }
 
+  if (jacobians_o != NULL) {
+    for (int i = 0; i < num_observation_blocks; ++i) {
+        const int observation_block_size = block.observation_blocks()[i]->Size();
+      if (!IsArrayValid(num_residuals * observation_block_size, jacobians_o[i])) {
+        return false;
+      }
+    }
+  }
   return true;
 }
-
 }  // namespace internal
 }  // namespace ceres

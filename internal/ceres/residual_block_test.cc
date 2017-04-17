@@ -324,5 +324,166 @@ TEST(ResidualBlock, EvaluteWithLocalParameterizations) {
   EXPECT_EQ(expected_jacobian_rz, jacobian_rz);
 }
 
+///////////////////////////////////////////////////////////////////////
+
+// Trivial relation function that accepts three arguments.
+class TernaryRelationFunction: public RelationFunction {
+ public:
+  TernaryRelationFunction(int num_residuals,
+                      int32 parameter_block1_size,
+                      int32 parameter_block2_size,
+                      int32 observation_block1_size) {
+    set_num_residuals(num_residuals);
+    mutable_parameter_block_sizes()->push_back(parameter_block1_size);
+    mutable_parameter_block_sizes()->push_back(parameter_block2_size);
+    mutable_observation_block_sizes()->push_back(observation_block1_size);
+  }
+
+  virtual bool Evaluate(double const* const* parameters,
+                        double const* const* observations,
+                        double* residuals,
+                        double** jacobians_p,
+                        double** jacobians_o) const {
+    for (int i = 0; i < num_residuals(); ++i) {
+      residuals[i] = i;
+    }
+    if (jacobians_p) {
+      for (int k = 0; k < 2; ++k) {
+        if (jacobians_p[k] != NULL) {
+          MatrixRef jacobian(jacobians_p[k],
+                             num_residuals(),
+                             parameter_block_sizes()[k]);
+          jacobian.setConstant(k);
+        }
+      }
+    }
+
+    if (jacobians_o) {
+      if (jacobians_o[0] != NULL) {
+          MatrixRef jacobian(jacobians_o[0],
+                             num_residuals(),
+                             observation_block_sizes()[0]);
+          jacobian.setConstant(0);
+      }
+    }
+    return true;
+  }
+};
+
+TEST(ResidualBlock, RelationFunctionEvaluteWithNoLossFunctionOrLocalParameterizations) {
+  double scratch[64];
+
+  // Prepare the parameter blocks.
+  double values_x[2];
+  ParameterBlock x(values_x, 2, -1);
+
+  double values_y[3];
+  ParameterBlock y(values_y, 3, -1);
+
+  double values_z[4];
+  ObservationBlock z(values_z, 4, -1);
+
+  vector<ParameterBlock*> parameters;
+  parameters.push_back(&x);
+  parameters.push_back(&y);
+
+  vector<ObservationBlock*> observations;
+  observations.push_back(&z);
+
+  TernaryRelationFunction cost_function(3, 2, 3, 4);
+
+  // Create the object under tests.
+  ResidualBlock residual_block(&cost_function, NULL, parameters, observations, -1);
+
+  // Verify getters.
+  EXPECT_EQ(&cost_function, residual_block.relation_function());
+  EXPECT_EQ(NULL, residual_block.loss_function());
+  EXPECT_EQ(parameters[0], residual_block.parameter_blocks()[0]);
+  EXPECT_EQ(parameters[1], residual_block.parameter_blocks()[1]);
+  EXPECT_EQ(observations[0], residual_block.observation_blocks()[0]);
+  EXPECT_EQ(3, residual_block.NumScratchDoublesForEvaluate());
+
+  // Verify cost-only evaluation.
+  double cost;
+  residual_block.Evaluate(true, &cost, NULL, NULL, scratch);
+  EXPECT_EQ(0.5 * (0*0 + 1*1 + 2*2), cost);
+
+  // Verify cost and residual evaluation.
+  double residuals[3];
+  residual_block.Evaluate(true, &cost, residuals, NULL, scratch);
+  EXPECT_EQ(0.5 * (0*0 + 1*1 + 2*2), cost);
+  EXPECT_EQ(0.0, residuals[0]);
+  EXPECT_EQ(1.0, residuals[1]);
+  EXPECT_EQ(2.0, residuals[2]);
+
+  // Verify cost, residual, and jacobian evaluation.
+  cost = 0.0;
+  VectorRef(residuals, 3).setConstant(0.0);
+
+  Matrix jacobian_rx(3, 2);
+  Matrix jacobian_ry(3, 3);
+  Matrix jacobian_rz(3, 4);
+
+  jacobian_rx.setConstant(-1.0);
+  jacobian_ry.setConstant(-1.0);
+  jacobian_rz.setConstant(-1.0);
+
+  double *jacobian_p_ptrs[] = {
+    jacobian_rx.data(),
+    jacobian_ry.data()
+  };
+
+  double *jacobian_o_ptrs[] = {
+    jacobian_rz.data()
+  };
+
+  residual_block.Evaluate(true, &cost, residuals, jacobian_p_ptrs, jacobian_o_ptrs, scratch);
+  EXPECT_EQ(0.5 * (0*0 + 1*1 + 2*2), cost);
+  EXPECT_EQ(0.0, residuals[0]);
+  EXPECT_EQ(1.0, residuals[1]);
+  EXPECT_EQ(2.0, residuals[2]);
+
+  EXPECT_TRUE((jacobian_rx.array() == 0.0).all()) << "\n" << jacobian_rx;
+  EXPECT_TRUE((jacobian_ry.array() == 1.0).all()) << "\n" << jacobian_ry;
+  EXPECT_TRUE((jacobian_rz.array() == 0.0).all()) << "\n" << jacobian_rz;
+
+  // Verify cost, residual, and partial jacobian evaluation.
+
+  // Don't compute the jacobian for observation z.
+  cost = 0.0;
+  VectorRef(residuals, 3).setConstant(0.0);
+  jacobian_rx.setConstant(-1.0);
+  jacobian_ry.setConstant(-1.0);
+  jacobian_rz.setConstant(-1.0);
+  residual_block.Evaluate(true, &cost, residuals, jacobian_p_ptrs, NULL, scratch);
+  EXPECT_EQ(0.5 * (0*0 + 1*1 + 2*2), cost);
+  EXPECT_EQ(0.0, residuals[0]);
+  EXPECT_EQ(1.0, residuals[1]);
+  EXPECT_EQ(2.0, residuals[2]);
+
+  EXPECT_TRUE((jacobian_rx.array() ==  0.0).all()) << "\n" << jacobian_rx;
+  EXPECT_TRUE((jacobian_ry.array() ==  1.0).all()) << "\n" << jacobian_ry;
+  EXPECT_TRUE((jacobian_rz.array() == -1.0).all()) << "\n" << jacobian_rz;
+
+  // Don't compute the jacobian for y.
+  cost = 0.0;
+  VectorRef(residuals, 3).setConstant(0.0);
+  jacobian_rx.setConstant(-1.0);
+  jacobian_ry.setConstant(-1.0);
+  jacobian_rz.setConstant(-1.0);
+
+  jacobian_p_ptrs[1] = NULL;
+
+  residual_block.Evaluate(true, &cost, residuals, jacobian_p_ptrs, jacobian_o_ptrs, scratch);
+  EXPECT_EQ(0.5 * (0*0 + 1*1 + 2*2), cost);
+  EXPECT_EQ(0.0, residuals[0]);
+  EXPECT_EQ(1.0, residuals[1]);
+  EXPECT_EQ(2.0, residuals[2]);
+
+  EXPECT_TRUE((jacobian_rx.array() ==  0.0).all()) << "\n" << jacobian_rx;
+  EXPECT_TRUE((jacobian_ry.array() == -1.0).all()) << "\n" << jacobian_ry;
+  EXPECT_TRUE((jacobian_rz.array() ==  0.0).all()) << "\n" << jacobian_rz;
+}
+
 }  // namespace internal
 }  // namespace ceres
