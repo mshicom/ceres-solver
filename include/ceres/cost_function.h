@@ -69,7 +69,7 @@ class CERES_EXPORT RelationFunction {
 
   virtual ~RelationFunction() {}
 
-
+  // Subclasses must implement Evaluate().
   virtual bool Evaluate(double const* const* parameters,
                         double const* const* observations,
                         double* residuals,
@@ -131,15 +131,10 @@ class CERES_EXPORT RelationFunction {
 // when added with AddResidualBlock().
 //
 // CostFunction "is-a" ConstraintFunction but has no explicit observation blocks.
-// Here use protected inheritance to inherit the functionality and hide the functions
-// related to observations.
-class CERES_EXPORT CostFunction : protected RelationFunction {
+class CERES_EXPORT CostFunction : public RelationFunction {
 public:
-  CostFunction():RelationFunction() {}
+  CostFunction() {}
   virtual ~CostFunction() {}
-
-  using RelationFunction::parameter_block_sizes;
-  using RelationFunction::num_residuals;
 
   // Inputs:
   //
@@ -189,7 +184,9 @@ public:
                         double* residuals,
                         double** jacobians_p) const = 0;
 
-  virtual bool Evaluate(double const* const* parameters,
+  // This implementaion will not be used in most cases, just to
+  // satisfy the RelationFunction definition.
+  bool Evaluate(double const* const* parameters,
                         double const* const* /*observations*/,
                         double* residuals,
                         double** jacobians_p,
@@ -197,11 +194,19 @@ public:
     return Evaluate(parameters, residuals, jacobians_p);
   }
 
+  // inherited signiture
+  using RelationFunction::parameter_block_sizes;
+  using RelationFunction::observation_block_sizes;
+  using RelationFunction::num_residuals;
+
 protected:
   using RelationFunction::mutable_parameter_block_sizes;
   using RelationFunction::set_num_residuals;
 
 private:
+  // Hide this method so no one can mess with observation_block_sizes.
+  using RelationFunction::mutable_observation_block_sizes;
+
   CERES_DISALLOW_COPY_AND_ASSIGN(CostFunction);
 };
 }  // namespace ceres

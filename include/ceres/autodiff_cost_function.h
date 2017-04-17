@@ -89,7 +89,6 @@
 //                            Dimension of residual -----+  |  |
 //                            Dimension of x ---------------+  |
 //                            Dimension of y ------------------+
-//
 // In this example, there is usually an instance for each measumerent of k.
 //
 // In the instantiation above, the template parameters following
@@ -125,7 +124,6 @@
 // instead of passing a dimension parameter for *every parameter*. In the
 // example above, that would be <MyScalarCostFunctor, 1, 2>, which is missing
 // the last '2' argument. Please be careful when setting the size parameters.
-
 #ifndef CERES_PUBLIC_AUTODIFF_COST_FUNCTION_H_
 #define CERES_PUBLIC_AUTODIFF_COST_FUNCTION_H_
 
@@ -222,20 +220,39 @@ class AutoDiffCostFunction : public SizedCostFunction<kNumResiduals,
   internal::scoped_ptr<CostFunctor> functor_;
 };
 
-// A cost function which computes the derivative of the cost with respect to
-// the parameters (a.k.a. the jacobian) using an autodifferentiation framework.
+// A relation function is similar to the above cost function, but computes
+// not only the parameters jacobian but also the observation jacobian.
 // The first template argument is the functor object, described in the header
-// comment. The second argument is the dimension of the residual (or
-// ceres::DYNAMIC to indicate it will be set at runtime), and subsequent
-// arguments describe the size of the Nth parameter, one per parameter.
+// comment. The second argument the dimension of the residual. The third
+// is the indicator of where the observation variables start. Assume it is M,
+// then arg[0]...arg[M-1] are parameters and arg[M]...arg[end] are observations.
+// After that, subsequent arguments describe the size of the Nth parameter,
+// one per parameter(or observations).
 //
 // The constructors take ownership of the cost functor.
 //
-// If the number of residuals (argument kNumResiduals below) is
-// ceres::DYNAMIC, then the two-argument constructor must be used. The
-// second constructor takes a number of residuals (in addition to the
-// templated number of residuals). This allows for varying the number
-// of residuals for a single autodiff cost function at runtime.
+// In the example of MyScalarCostFunctor, to use RelationFunction observation k
+// is explicitly modeled just like parameter x (or y), but goes after all of them
+// in the argument list of operator() :
+//   class MyScalarRelationFunctor {
+//     MyScalarRelationFunctor() {}
+//
+//     template <typename T>
+//     bool operator()(const T* const x , const T* const y, const T* const k,  T* e) const {
+//       e[0] = k[0] - x[0] * y[0] + x[1] * y[1];
+//       return true;
+//     }
+//   };
+//
+//   RelationFunction* relation_function
+//       = new AutoDiffRelationFunction<MyScalarRelationFunctor, 1, 2, 2, 2, 1>(
+//            new MyScalarRelationFunctor());                    ^  ^  ^  ^  ^
+//                                                               |  |  |  |  |
+//                                    Dimension of residual -----+  |  |  |  |
+//                                    Argument index of k ----------+  |  |  |
+//                                    Dimension of x ------------------+  |  |
+//                                    Dimension of y ---------------------+  |
+//                                    Dimension of k ------------------------+
 template <typename CostFunctor,
           int kNumResiduals,  // Number of residuals, or ceres::DYNAMIC.
           int kObservationStart, // Where Observation block start.

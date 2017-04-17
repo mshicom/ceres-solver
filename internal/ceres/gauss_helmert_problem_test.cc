@@ -154,10 +154,36 @@ struct AffineConstraintFunctor {
     return new AutoDiffRelationFunction<AffineConstraintFunctor, 4, 1, 4, 4>(
         new AffineConstraintFunctor(A, B));
   }
+
   protected:
   Eigen::MatrixXd A_, B_; //
 
 };
+struct AffineCostFunctor {
+  AffineCostFunctor(const Eigen::MatrixXd &A, const Eigen::MatrixXd &B, const Eigen::Vector4d &L)
+      :A_(A), B_(B), L_(L) {
+      CHECK( A_.rows()==4 & A_.cols()==4 & B_.rows()==4 & B_.cols()==4)
+              << "Wrong matrix size, should be 4-by-4";
+   }
+
+  template <typename T>
+  bool operator()(T const X[4], T cost[4]) const {
+    Eigen::Map<const Eigen::Matrix<T,4,1> > x_(X);
+    Eigen::Map<Eigen::Matrix<T,4,1> >cost_(cost);
+    cost_ = A_.cast<T>() * x_ + B_.cast<T>() * L_.cast<T>();
+    return true;
+  }
+
+  static CostFunction* create(const Eigen::MatrixXd &A, const Eigen::MatrixXd &B, const Eigen::Vector4d &L) {
+    return new AutoDiffCostFunction<AffineCostFunctor, 4, 4>(
+        new AffineCostFunctor(A, B, L));
+  }
+
+  protected:
+  Eigen::MatrixXd A_, B_; //
+  Eigen::Vector4d L_;
+};
+
 
 class GHProblemTest : public ::testing::Test {
   protected:
@@ -231,6 +257,7 @@ TEST_F(GHProblemTest, RelationFunction)
 }
 
 
+
 TEST_F(GHProblemTest, AutoDiffRelationFunction)
 {
   double residuals[4];
@@ -269,6 +296,28 @@ TEST_F(GHProblemTest, AutoDiffRelationFunction)
   std::cout << A << std::endl;
   EXPECT_TRUE( ( ConstVectorRef(residuals, 4)- expect_residual_affine ).squaredNorm() < 1e-10 );
   EXPECT_TRUE( ( A - affine_A ).squaredNorm() < 1e-10 );
+
+}
+
+TEST_F(GHProblemTest, AutoDiffCostFunction)
+{
+    double residuals[4];
+
+    double a[4][4];
+    double* jacobians_p[4] = {a[0], a[1], a[2], a[3]};
+    MatrixRef A(&a[0][0],4,4);
+
+    double* parameters[1] = {x[0]};
+
+    CostFunction* cost_function = AffineCostFunctor::create(affine_A, affine_B, ConstVectorRef(l[0], 4));
+
+    cost_function->Evaluate(parameters, residuals, NULL);
+    EXPECT_TRUE( ( ConstVectorRef(residuals, 4)- expect_residual_affine ).squaredNorm() < 1e-10 );
+
+    VectorRef(residuals, 4).setConstant(-1); A.setConstant(-1);
+    cost_function->Evaluate(parameters, residuals, jacobians_p);
+    EXPECT_TRUE( ( ConstVectorRef(residuals, 4)- expect_residual_affine ).squaredNorm() < 1e-10 );
+    EXPECT_TRUE( ( A - affine_A ).squaredNorm() < 1e-10 );
 
 }
 
