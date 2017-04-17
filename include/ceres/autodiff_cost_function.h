@@ -309,30 +309,15 @@ class AutoDiffRelationFunction : public SizedRelationFunction<kNumResiduals, kOb
                         double** jacobians_o) const {
     CHECK_NOTNULL(residuals);
 
-    if ( jacobians_p != NULL || jacobians_o != NULL) {
-      return internal::AutoDiff2<CostFunctor, double, kObservationStart,
-             N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>::Differentiate(
-                 *functor_,
-                 parameters, observations,
-                 SizedRelationFunction<kNumResiduals,kObservationStart,
-                                   N0, N1, N2, N3, N4,
-                                   N5, N6, N7, N8, N9>::num_residuals(),
-                 residuals,
-                 jacobians_p, jacobians_o);
-    } else {  // no jacobian needed
+    if ( jacobians_p == NULL & jacobians_o == NULL) {
+      // case 1. no jacobian needed
       return internal::VariadicEvaluate2<
           CostFunctor, double, kObservationStart, N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>
           ::Call(*functor_, parameters, observations, residuals);
     }
-  }
 
-  virtual bool Evaluate(double const* const* parameters,
-                        double const* const* observations,
-                        double* residuals,
-                        double** jacobians_p) const {
-    CHECK_NOTNULL(residuals);
-
-    if ( jacobians_p != NULL) {
+    if (jacobians_p != NULL & jacobians_o == NULL) {
+      // case 2. only jacobians_p needed, use fast version
       return internal::AutoDiff2<CostFunctor, double, kObservationStart,
              N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>::DifferentiateParameterOnly(
                  *functor_,
@@ -342,11 +327,17 @@ class AutoDiffRelationFunction : public SizedRelationFunction<kNumResiduals, kOb
                                    N5, N6, N7, N8, N9>::num_residuals(),
                  residuals,
                  jacobians_p);
-    } else {  // no jacobian needed
-      return internal::VariadicEvaluate2<
-          CostFunctor, double, kObservationStart, N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>
-          ::Call(*functor_, parameters, observations, residuals);
     }
+      // case 3. use full version for jacobians_o regardless of jacobians_p
+      return internal::AutoDiff2<CostFunctor, double, kObservationStart,
+             N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>::Differentiate(
+                 *functor_,
+                 parameters, observations,
+                 SizedRelationFunction<kNumResiduals,kObservationStart,
+                                   N0, N1, N2, N3, N4,
+                                   N5, N6, N7, N8, N9>::num_residuals(),
+                 residuals,
+                 jacobians_p, jacobians_o);
   }
 
  private:

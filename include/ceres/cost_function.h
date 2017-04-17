@@ -76,17 +76,6 @@ class CERES_EXPORT RelationFunction {
                         double** jacobians_p,
                         double** jacobians_o) const = 0;
 
-  // Same as above, but the Jacobian of the observations is not needed.
-  // Subclasses can overwrite this function to provide a faster Evaluate
-  // function when the Jacobian of the observations is not needed. Default
-  // behavior is simply pass a NULL pointer.
-  virtual bool Evaluate(double const* const* parameters,
-                        double const* const* observations,
-                        double* residuals,
-                        double** jacobians_p) const {
-    return Evaluate(parameters, observations, residuals, jacobians_p, NULL);
-  }
-
   const std::vector<int32>& parameter_block_sizes() const {
     return parameter_block_sizes_;
   }
