@@ -34,7 +34,7 @@
 #include <cstddef>
 #include <vector>
 #include "ceres/corrector.h"
-#include "ceres/gauss_helmert_constraint_function.h"
+#include "ceres/cost_function.h"
 #include "ceres/internal/eigen.h"
 #include "ceres/internal/fixed_array.h"
 #include "ceres/local_parameterization.h"
@@ -175,7 +175,7 @@ bool IsEvaluationValid(const GHConstraintBlock& block,
   return true;
 }
 
-GHConstraintBlock::GHConstraintBlock(const GaussHelmertConstraintFunction* constraint_function,
+GHConstraintBlock::GHConstraintBlock(const RelationFunction* constraint_function,
                                  const LossFunction* loss_function,
                                  const std::vector<GHParameterBlock*>& parameter_blocks,
                                  const std::vector<GHObservationBlock*>& observation_blocks,

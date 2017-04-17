@@ -28,11 +28,19 @@
 //
 // Author: sameeragarwal@google.com (Sameer Agarwal)
 //         keir@google.m (Keir Mierle)
+// modifed: kaihong.huang11@google.com (Kaihong Huang)
 //
 // This is the interface through which the least squares solver accesses the
 // residual and Jacobian of the least squares problem. Users are expected to
-// subclass CostFunction to define their own terms in the least squares problem.
-//
+// subclass CostFunction or RelationFunction to define their own terms in
+// the least squares problem. Use CostFunction to model explict functions
+// like f(x)=l, where x are unkown parameters and l are known observation.
+// In case of implicit functions like g(x,l)=0, use RelationFunction.
+// The CostFunction provides only Jx (the Jacobian of x) while RelationFunction
+// provides both Jx and Jl. For more info about implicit functions, please wiki
+// the term "Gauss-Helmert model", in comparision, explict function referes to
+// "Gauss-Markov model"
+
 // It is recommended that users define templated residual functors for use as
 // arguments for AutoDiffCostFunction (see autodiff_cost_function.h), instead of
 // directly implementing the CostFunction interface. This often results in both
@@ -52,6 +60,66 @@
 
 namespace ceres {
 
+// This class models the implicit relations like g(x,l)=0 between the (unkown)
+// parameters x and the (known) observations l, which serves as a constraint
+// function in the Gauss-Helmert least squares problem.
+class CERES_EXPORT RelationFunction {
+ public:
+  RelationFunction() : num_residuals_(0) {}
+
+  virtual ~RelationFunction() {}
+
+
+  virtual bool Evaluate(double const* const* parameters,
+                        double const* const* observations,
+                        double* residuals,
+                        double** jacobians_p,
+                        double** jacobians_o) const = 0;
+
+  // Same as above, but the Jacobian of the observations is not needed.
+  // Subclasses can overwrite this function to provide a faster Evaluate
+  // function when the Jacobian of the observations is not needed. Default
+  // behavior is simply pass a NULL pointer.
+  virtual bool Evaluate(double const* const* parameters,
+                        double const* const* observations,
+                        double* residuals,
+                        double** jacobians_p) const {
+    return Evaluate(parameters, observations, residuals, jacobians_p, NULL);
+  }
+
+  const std::vector<int32>& parameter_block_sizes() const {
+    return parameter_block_sizes_;
+  }
+  const std::vector<int32>& observation_block_sizes() const {
+    return observation_block_sizes_;
+  }
+  int num_residuals() const {
+    return num_residuals_;
+  }
+
+ protected:
+  std::vector<int32>* mutable_parameter_block_sizes() {
+    return &parameter_block_sizes_;
+  }
+  std::vector<int32>* mutable_observation_block_sizes() {
+    return &observation_block_sizes_;
+  }
+  void set_num_residuals(int num_residuals) {
+    num_residuals_ = num_residuals;
+  }
+
+ private:
+  // Cost function signature metadata: number of inputs & their sizes,
+  // number of outputs (residuals).
+  std::vector<int32> parameter_block_sizes_;
+  std::vector<int32> observation_block_sizes_;
+
+  int num_residuals_;
+  CERES_DISALLOW_COPY_AND_ASSIGN(RelationFunction);
+};
+
+
+
 // This class implements the computation of the cost (a.k.a. residual) terms as
 // a function of the input (control) variables, and is the interface for users
 // to describe their least squares problem to Ceres. In other words, this is the
@@ -61,11 +129,17 @@ namespace ceres {
 // code inheriting from this class is expected to set these two members with the
 // corresponding accessors. This information will be verified by the Problem
 // when added with AddResidualBlock().
-class CERES_EXPORT CostFunction {
- public:
-  CostFunction() : num_residuals_(0) {}
-
+//
+// CostFunction "is-a" ConstraintFunction but has no explicit observation blocks.
+// Here use protected inheritance to inherit the functionality and hide the functions
+// related to observations.
+class CERES_EXPORT CostFunction : protected RelationFunction {
+public:
+  CostFunction():RelationFunction() {}
   virtual ~CostFunction() {}
+
+  using RelationFunction::parameter_block_sizes;
+  using RelationFunction::num_residuals;
 
   // Inputs:
   //
@@ -113,33 +187,23 @@ class CERES_EXPORT CostFunction {
   // declare a numerical problem at iteration 0.
   virtual bool Evaluate(double const* const* parameters,
                         double* residuals,
-                        double** jacobians) const = 0;
+                        double** jacobians_p) const = 0;
 
-  const std::vector<int32>& parameter_block_sizes() const {
-    return parameter_block_sizes_;
+  virtual bool Evaluate(double const* const* parameters,
+                        double const* const* /*observations*/,
+                        double* residuals,
+                        double** jacobians_p,
+                        double** /*jacobians_o*/) const {
+    return Evaluate(parameters, residuals, jacobians_p);
   }
 
-  int num_residuals() const {
-    return num_residuals_;
-  }
+protected:
+  using RelationFunction::mutable_parameter_block_sizes;
+  using RelationFunction::set_num_residuals;
 
- protected:
-  std::vector<int32>* mutable_parameter_block_sizes() {
-    return &parameter_block_sizes_;
-  }
-
-  void set_num_residuals(int num_residuals) {
-    num_residuals_ = num_residuals;
-  }
-
- private:
-  // Cost function signature metadata: number of inputs & their sizes,
-  // number of outputs (residuals).
-  std::vector<int32> parameter_block_sizes_;
-  int num_residuals_;
+private:
   CERES_DISALLOW_COPY_AND_ASSIGN(CostFunction);
 };
-
 }  // namespace ceres
 
 #include "ceres/internal/reenable_warnings.h"

@@ -28,8 +28,8 @@
 //
 // Author: kaihong.huang11@google.com (Kaihong Huang)
 
-#include "ceres/autodiff_gauss_helmert_constraint_function.h"
-#include "ceres/gauss_helmert_constraint_function.h"
+#include "ceres/autodiff_cost_function.h"
+#include "ceres/cost_function.h"
 #include "ceres/problem.h"
 #include "ceres/problem_impl.h"
 
@@ -86,7 +86,7 @@ using namespace ceres::internal;
 using std::vector;
 
 // Trivial constraint function that accepts one single argument and one single observation.
-class EqualityConstraintFunction : public GaussHelmertConstraintFunction {
+class EqualityConstraintFunction : public RelationFunction {
  public:
   EqualityConstraintFunction() {
     set_num_residuals(4);
@@ -129,8 +129,8 @@ struct EqualityConstraintFunctor {
     return true;
   }
 
-  static GaussHelmertConstraintFunction* create() {
-    return new AutoDiffGaussHelmertConstraintFunction<EqualityConstraintFunctor, 4, 1, 4, 4>(
+  static RelationFunction* create() {
+    return new AutoDiffRelationFunction<EqualityConstraintFunctor, 4, 1, 4, 4>(
         new EqualityConstraintFunctor());
   }
 };
@@ -150,8 +150,8 @@ struct AffineConstraintFunctor {
     return true;
   }
 
-  static GaussHelmertConstraintFunction* create(const Eigen::MatrixXd &A, const Eigen::MatrixXd &B) {
-    return new AutoDiffGaussHelmertConstraintFunction<AffineConstraintFunctor, 4, 1, 4, 4>(
+  static RelationFunction* create(const Eigen::MatrixXd &A, const Eigen::MatrixXd &B) {
+    return new AutoDiffRelationFunction<AffineConstraintFunctor, 4, 1, 4, 4>(
         new AffineConstraintFunctor(A, B));
   }
   protected:
@@ -197,7 +197,7 @@ class GHProblemTest : public ::testing::Test {
 
 
 
-TEST_F(GHProblemTest, GaussHelmertConstraintFunction)
+TEST_F(GHProblemTest, RelationFunction)
 {
   double residuals[4];
 
@@ -212,7 +212,7 @@ TEST_F(GHProblemTest, GaussHelmertConstraintFunction)
   double* parameters[1] = {x[0]};
   double* observations[1] = {l[0]};
 
-  GaussHelmertConstraintFunction* constraint_function = new EqualityConstraintFunction();
+  RelationFunction* constraint_function = new EqualityConstraintFunction();
 
   constraint_function->Evaluate(parameters, observations, residuals, NULL, NULL);
   EXPECT_TRUE( ( ConstVectorRef(residuals, 4).array() == -ConstVectorRef(l[0], 4).array() ).all() );
@@ -231,7 +231,7 @@ TEST_F(GHProblemTest, GaussHelmertConstraintFunction)
 }
 
 
-TEST_F(GHProblemTest, AutoDiffGaussHelmertConstraintFunction)
+TEST_F(GHProblemTest, AutoDiffRelationFunction)
 {
   double residuals[4];
 
@@ -246,7 +246,7 @@ TEST_F(GHProblemTest, AutoDiffGaussHelmertConstraintFunction)
   double* parameters[1] = {x[0]};
   double* observations[1] = {l[0]};
 
-  GaussHelmertConstraintFunction* constraint_function = AffineConstraintFunctor::create(affine_A, affine_B);
+  RelationFunction* constraint_function = AffineConstraintFunctor::create(affine_A, affine_B);
 
   constraint_function->Evaluate(parameters, observations, residuals, NULL, NULL);
   EXPECT_TRUE( ( ConstVectorRef(residuals, 4)- expect_residual_affine ).squaredNorm() < 1e-10 );
@@ -482,15 +482,9 @@ TEST_F(GHProblemTest, dev)
 //        std::cout<< B->mutable_matrix() << std::endl;
         Eigen::HouseholderQR< ColMajorMatrix > qr_solver(B->mutable_matrix().transpose());
 
-        Vector c = B->mutable_matrix() * correction - residual;
-//        std::cout<< c << std::endl;
-
         ColMajorMatrix J = qr_solver.matrixQR().template triangularView<Eigen::Upper>().transpose().solve(A->mutable_matrix());
 //        std::cout<< J << std::endl;
-
-        DenseSparseMatrix J_op(J);
-
-        Vector cp = qr_solver.matrixQR().template triangularView<Eigen::Upper>().transpose().solve(c);
+        Vector cp = qr_solver.matrixQR().template triangularView<Eigen::Upper>().transpose().solve(B->mutable_matrix() * correction - residual);
 //        std::cout<< cp << std::endl;
 
         LinearSolver::Options solver_options;
@@ -499,8 +493,9 @@ TEST_F(GHProblemTest, dev)
         scoped_ptr<LinearSolver> solver(LinearSolver::Create(solver_options));
         Vector dx(program->NumEffectiveParameters());
 
+        DenseSparseMatrix J_op(J);
         solver->Solve(&J_op, cp.data(), pre_opt, dx.data());
-        LOG(INFO) << dx << std::endl;
+        std::cout << dx << std::endl;
 
         Vector dl = qr_solver.householderQ() * (cp - J*dx) - correction;
         std::cout << dl << std::endl;
@@ -628,7 +623,7 @@ Eigen::Matrix<T, 3, 1> Rot2ax(const Eigen::Matrix<T, 3, 3>& R){
         return (phi/an)*a;
 }
 
-// template specialization because of the if-else branch
+// template specialization for double because of the if-else branch
 template <>
 Eigen::Matrix<double, 3, 1> Rot2ax<double>(const Eigen::Matrix<double, 3, 3>& R){
     Eigen::Matrix<double, 3, 1> a;
@@ -676,8 +671,8 @@ struct HandEyeConstraintFunctor {
       return true;
   }
 
-  static GaussHelmertConstraintFunction* create() {
-    return new AutoDiffGaussHelmertConstraintFunction<HandEyeConstraintFunctor, 6, 2, 3, 3, 3, 3, 3, 3>(
+  static RelationFunction* create() {
+    return new AutoDiffRelationFunction<HandEyeConstraintFunctor, 6, 2, 3, 3, 3, 3, 3, 3>(
         new HandEyeConstraintFunctor());
   }
 
@@ -764,11 +759,10 @@ TEST_F(HandEyeProblemTest, AngleAxisAndRotationMatrix)
     std::cout<< ret2(0).a << ret2(1).a << ret2(2).a <<std::endl;
 }
 
-
 TEST_F(HandEyeProblemTest, HandEyeProblem)
 {
-    const size_t num_sensors = 2;
-    const size_t num_movements = 1;
+    const size_t num_sensors = 3;
+    const size_t num_movements = 1000;
     InitTrajectories(num_sensors, num_movements);
 
     GHProblem problem;
@@ -789,32 +783,13 @@ TEST_F(HandEyeProblemTest, HandEyeProblem)
                      &gradient_p, &gradient_o,
                      &A, &B);
 
-    CRSMatrixToDenseMatrix(A, &A_dense);
-    CRSMatrixToDenseMatrix(B, &B_dense);
-    std::cout<< cost << std::endl;
-    std::cout<< A_dense << std::endl;
-    std::cout<< B_dense << std::endl;
 
 
-
-//    GHProgram* program = problem.mutable_program();
-//    program->SetParameterOffsetsAndIndex();
-//    program->SetObservationOffsetsAndIndex();
-
-//    GHEvaluator::Options options;
-//    std::string error;
-//    options.linear_solver_type = DENSE_QR;
-//    scoped_ptr<GHEvaluator> evaluator(GHEvaluator::Create(options, program, &error));
-//    scoped_ptr<DenseSparseMatrix> A(down_cast<DenseSparseMatrix*>(evaluator->CreateJacobian_p()));
-//    scoped_ptr<DenseSparseMatrix> B(down_cast<DenseSparseMatrix*>(evaluator->CreateJacobian_o()));
-
-//    double cost;
-//    Vector residual(program->NumResiduals());
-
-//    evaluator->Evaluate(parameters.data(), observations.data(),
-//            &cost, residual.data(),
-//            NULL, NULL,
-//            A.get() , B.get());
+//    CRSMatrixToDenseMatrix(A, &A_dense);
+//    CRSMatrixToDenseMatrix(B, &B_dense);
+//    std::cout<< cost << std::endl;
+//    std::cout<< A_dense << std::endl;
+//    std::cout<< B_dense << std::endl;
 
 
 }

@@ -238,7 +238,7 @@ void GHProblem::DeleteBlock(GHConstraintBlock* constraint_block) {
   if (options_.cost_function_ownership == TAKE_OWNERSHIP &&
       constraint_block->constraint_function() != NULL) {
     constraint_functions_to_delete_.push_back(
-        const_cast<GaussHelmertConstraintFunction*>(constraint_block->constraint_function()));
+        const_cast<RelationFunction*>(constraint_block->constraint_function()));
   }
   if (options_.loss_function_ownership == TAKE_OWNERSHIP &&
       constraint_block->loss_function() != NULL) {
@@ -305,7 +305,7 @@ GHProblem::~GHProblem() {
 }
 
 GHConstraintBlock* GHProblem::AddConstraintBlock(
-    GaussHelmertConstraintFunction* constraint_function,
+    RelationFunction* constraint_function,
     LossFunction* loss_function,
     const vector<double*>& parameter_blocks,
     const vector<double*>& observation_blocks) {
@@ -435,7 +435,7 @@ GHConstraintBlock* GHProblem::AddConstraintBlock(
 
 
 GHConstraintBlock* GHProblem::AddConstraintBlock(
-    GaussHelmertConstraintFunction* constraint_function,
+    RelationFunction* constraint_function,
     LossFunction* loss_function,
     ...) {
 
@@ -1100,7 +1100,7 @@ void GHProblem::GetObservationBlocksForConstraintBlock(
     }
   }
 
-const GaussHelmertConstraintFunction* GHProblem::GetConstraintFunctionForConstraintBlock(
+const RelationFunction* GHProblem::GetConstraintFunctionForConstraintBlock(
     const ConstraintBlockId constraint_block) const {
   return constraint_block->constraint_function();
 }

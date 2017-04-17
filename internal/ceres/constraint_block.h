@@ -41,7 +41,7 @@
 #include "ceres/internal/scoped_ptr.h"
 #include "ceres/stringprintf.h"
 #include "ceres/types.h"
-#include "ceres/gauss_helmert_constraint_function.h"
+#include "ceres/cost_function.h"
 #include "ceres/GH_parameter_block.h"
 namespace ceres {
 
@@ -70,7 +70,7 @@ class GHConstraintBlock {
   // Construct the constraint block with the given cost/loss functions. Loss may
   // be null. The index is the index of the residual block in the Program's
   // residual_blocks array.
-  GHConstraintBlock(const GaussHelmertConstraintFunction* constraint_function,
+  GHConstraintBlock(const RelationFunction* constraint_function,
                   const LossFunction* loss_function,
                   const std::vector<GHParameterBlock*>& parameter_blocks,
                   const std::vector<GHObservationBlock*>& observation_blocks,
@@ -108,7 +108,7 @@ class GHConstraintBlock {
                 double** jacobians_p, double** jacobians_o,
                 double* scratch) const;
 
-  const GaussHelmertConstraintFunction* constraint_function() const { return constraint_function_; }
+  const RelationFunction* constraint_function() const { return constraint_function_; }
   const LossFunction* loss_function() const { return loss_function_; }
 
   // Access the parameter blocks for this residual. The array has size
@@ -138,7 +138,7 @@ class GHConstraintBlock {
   std::string ToString() const { return StringPrintf("{residual block; index=%d}", index_); }
 
  private:
-  const GaussHelmertConstraintFunction* constraint_function_;
+  const RelationFunction* constraint_function_;
   const LossFunction* loss_function_;
   scoped_array<GHParameterBlock*> parameter_blocks_;
   scoped_array<GHObservationBlock*> observation_blocks_;

@@ -51,7 +51,7 @@
 
 namespace ceres {
 
-class GaussHelmertConstraintFunction;
+class RelationFunction;
 class LossFunction;
 class LocalParameterization;
 struct CRSMatrix;
@@ -79,12 +79,12 @@ class GHProblem {
 
   // See the public problem.h file for description of these methods.
   GHConstraintBlock* AddConstraintBlock(
-      GaussHelmertConstraintFunction* constraint_function,
+      RelationFunction* constraint_function,
       LossFunction* loss_function,
       const std::vector<double*>& parameter_blocks,
       const std::vector<double*>& observation_blocks);
 
-  GHConstraintBlock* AddConstraintBlock(GaussHelmertConstraintFunction* constraint_function,
+  GHConstraintBlock* AddConstraintBlock(RelationFunction* constraint_function,
       LossFunction* loss_function, ...);
 
   void AddParameterBlock(double* values, int size);
@@ -195,7 +195,7 @@ class GHProblem {
       const ConstraintBlockId constraint_block,
       std::vector<double*>* observation_blocks) const;
 
-  const GaussHelmertConstraintFunction* GetConstraintFunctionForConstraintBlock(
+  const RelationFunction* GetConstraintFunctionForConstraintBlock(
       const ConstraintBlockId constraint_block) const;
   const LossFunction* GetLossFunctionForConstraintBlock(
       const ConstraintBlockId constraint_block) const;
@@ -259,7 +259,7 @@ class GHProblem {
   // residual or parameter blocks, buffer them until destruction.
   //
   // TODO(keir): See if it makes sense to use sets instead.
-  std::vector<GaussHelmertConstraintFunction*> constraint_functions_to_delete_;
+  std::vector<RelationFunction*> constraint_functions_to_delete_;
   std::vector<LossFunction*> loss_functions_to_delete_;
   std::vector<LocalParameterization*> local_parameterizations_to_delete_;
 

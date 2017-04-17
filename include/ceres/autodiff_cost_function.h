@@ -222,6 +222,120 @@ class AutoDiffCostFunction : public SizedCostFunction<kNumResiduals,
   internal::scoped_ptr<CostFunctor> functor_;
 };
 
+// A cost function which computes the derivative of the cost with respect to
+// the parameters (a.k.a. the jacobian) using an autodifferentiation framework.
+// The first template argument is the functor object, described in the header
+// comment. The second argument is the dimension of the residual (or
+// ceres::DYNAMIC to indicate it will be set at runtime), and subsequent
+// arguments describe the size of the Nth parameter, one per parameter.
+//
+// The constructors take ownership of the cost functor.
+//
+// If the number of residuals (argument kNumResiduals below) is
+// ceres::DYNAMIC, then the two-argument constructor must be used. The
+// second constructor takes a number of residuals (in addition to the
+// templated number of residuals). This allows for varying the number
+// of residuals for a single autodiff cost function at runtime.
+template <typename CostFunctor,
+          int kNumResiduals,  // Number of residuals, or ceres::DYNAMIC.
+          int kObservationStart, // Where Observation block start.
+          int N0,       // Number of parameters in block 0.
+          int N1 = 0,   // Number of parameters in block 1.
+          int N2 = 0,   // Number of parameters in block 2.
+          int N3 = 0,   // Number of parameters in block 3.
+          int N4 = 0,   // Number of parameters in block 4.
+          int N5 = 0,   // Number of parameters in block 5.
+          int N6 = 0,   // Number of parameters in block 6.
+          int N7 = 0,   // Number of parameters in block 7.
+          int N8 = 0,   // Number of parameters in block 8.
+          int N9 = 0>   // Number of parameters in block 9.
+class AutoDiffRelationFunction : public SizedRelationFunction<kNumResiduals, kObservationStart,
+                                                      N0, N1, N2, N3, N4,
+                                                      N5, N6, N7, N8, N9> {
+ public:
+  // Takes ownership of functor. Uses the template-provided value for the
+  // number of residuals ("kNumResiduals").
+  explicit AutoDiffRelationFunction(CostFunctor* functor)
+      : functor_(functor) {
+    CHECK_NE(kNumResiduals, DYNAMIC)
+        << "Can't run the fixed-size constructor if the "
+        << "number of residuals is set to ceres::DYNAMIC.";
+  }
+
+  // Takes ownership of functor. Ignores the template-provided
+  // kNumResiduals in favor of the "num_residuals" argument provided.
+  //
+  // This allows for having autodiff cost functions which return varying
+  // numbers of residuals at runtime.
+  AutoDiffRelationFunction(CostFunctor* functor, int num_residuals)
+      : functor_(functor) {
+    CHECK_EQ(kNumResiduals, DYNAMIC)
+        << "Can't run the dynamic-size constructor if the "
+        << "number of residuals is not ceres::DYNAMIC.";
+    SizedRelationFunction<kNumResiduals,kObservationStart,
+                      N0, N1, N2, N3, N4,
+                      N5, N6, N7, N8, N9>
+        ::set_num_residuals(num_residuals);
+  }
+
+  virtual ~AutoDiffRelationFunction() {}
+
+  // Implementation details follow; clients of the autodiff cost function should
+  // not have to examine below here.
+  //
+  // To handle varardic cost functions, some template magic is needed. It's
+  // mostly hidden inside autodiff.h.
+  virtual bool Evaluate(double const* const* parameters,
+                        double const* const* observations,
+                        double* residuals,
+                        double** jacobians_p,
+                        double** jacobians_o) const {
+    CHECK_NOTNULL(residuals);
+
+    if ( jacobians_p != NULL || jacobians_o != NULL) {
+      return internal::AutoDiff2<CostFunctor, double, kObservationStart,
+             N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>::Differentiate(
+                 *functor_,
+                 parameters, observations,
+                 SizedRelationFunction<kNumResiduals,kObservationStart,
+                                   N0, N1, N2, N3, N4,
+                                   N5, N6, N7, N8, N9>::num_residuals(),
+                 residuals,
+                 jacobians_p, jacobians_o);
+    } else {  // no jacobian needed
+      return internal::VariadicEvaluate2<
+          CostFunctor, double, kObservationStart, N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>
+          ::Call(*functor_, parameters, observations, residuals);
+    }
+  }
+
+  virtual bool Evaluate(double const* const* parameters,
+                        double const* const* observations,
+                        double* residuals,
+                        double** jacobians_p) const {
+    CHECK_NOTNULL(residuals);
+
+    if ( jacobians_p != NULL) {
+      return internal::AutoDiff2<CostFunctor, double, kObservationStart,
+             N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>::DifferentiateParameterOnly(
+                 *functor_,
+                 parameters, observations,
+                 SizedRelationFunction<kNumResiduals,kObservationStart,
+                                   N0, N1, N2, N3, N4,
+                                   N5, N6, N7, N8, N9>::num_residuals(),
+                 residuals,
+                 jacobians_p);
+    } else {  // no jacobian needed
+      return internal::VariadicEvaluate2<
+          CostFunctor, double, kObservationStart, N0, N1, N2, N3, N4, N5, N6, N7, N8, N9>
+          ::Call(*functor_, parameters, observations, residuals);
+    }
+  }
+
+ private:
+  internal::scoped_ptr<CostFunctor> functor_;
+};
+
 }  // namespace ceres
 
 #endif  // CERES_PUBLIC_AUTODIFF_COST_FUNCTION_H_

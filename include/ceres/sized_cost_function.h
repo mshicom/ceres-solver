@@ -41,8 +41,56 @@
 #include "ceres/types.h"
 #include "ceres/cost_function.h"
 #include "glog/logging.h"
-
 namespace ceres {
+
+template<int kNumResiduals, int kObservationStart,
+         int N0 = 0, int N1 = 0, int N2 = 0, int N3 = 0, int N4 = 0,
+         int N5 = 0, int N6 = 0, int N7 = 0, int N8 = 0, int N9 = 0>
+class SizedRelationFunction : public RelationFunction {
+ public:
+  SizedRelationFunction() {
+    CHECK(kNumResiduals > 0 || kNumResiduals == DYNAMIC)
+        << "Constraint functions must have at least one residual block.";
+    CHECK(kObservationStart >= 0)
+        << "kObservationStart must be nonegative.";
+
+    // This block breaks the 80 column rule to keep it somewhat readable.
+    CHECK((!N1 && !N2 && !N3 && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||
+          ((N1 > 0) && !N2 && !N3 && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||
+          ((N1 > 0) && (N2 > 0) && !N3 && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||                                   // NOLINT
+          ((N1 > 0) && (N2 > 0) && (N3 > 0) && !N4 && !N5 && !N6 && !N7 && !N8 && !N9) ||                              // NOLINT
+          ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && !N5 && !N6 && !N7 && !N8 && !N9) ||                         // NOLINT
+          ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && !N6 && !N7 && !N8 && !N9) ||                    // NOLINT
+          ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && !N7 && !N8 && !N9) ||               // NOLINT
+          ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && (N7 > 0) && !N8 && !N9) ||          // NOLINT
+          ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && (N7 > 0) && (N8 > 0) && !N9) ||     // NOLINT
+          ((N1 > 0) && (N2 > 0) && (N3 > 0) && (N4 > 0) && (N5 > 0) && (N6 > 0) && (N7 > 0) && (N8 > 0) && (N9 > 0)))  // NOLINT
+        << "Zero block cannot precede a non-zero block. Block sizes are "
+        << "(ignore trailing 0s): " << N0 << ", " << N1 << ", " << N2 << ", "
+        << N3 << ", " << N4 << ", " << N5 << ", " << N6 << ", " << N7 << ", "
+        << N8 << ", " << N9;
+
+    set_num_residuals(kNumResiduals);
+
+#define CERES_ADD_BLOCK(i) \
+    if (N ## i) (i<kObservationStart)? mutable_parameter_block_sizes()->push_back(N ## i):mutable_observation_block_sizes()->push_back(N ## i)
+    CERES_ADD_BLOCK(0);
+    CERES_ADD_BLOCK(1);
+    CERES_ADD_BLOCK(2);
+    CERES_ADD_BLOCK(3);
+    CERES_ADD_BLOCK(4);
+    CERES_ADD_BLOCK(5);
+    CERES_ADD_BLOCK(6);
+    CERES_ADD_BLOCK(7);
+    CERES_ADD_BLOCK(8);
+    CERES_ADD_BLOCK(9);
+#undef CERES_ADD_BLOCK
+  }
+
+  virtual ~SizedRelationFunction() { }
+
+  // Subclasses must implement Evaluate().
+};
 
 template<int kNumResiduals,
          int N0 = 0, int N1 = 0, int N2 = 0, int N3 = 0, int N4 = 0,
