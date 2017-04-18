@@ -567,7 +567,7 @@ TEST(Problem, SetLocalParameterizationWithUnknownPtrDies) {
 
   EXPECT_DEATH_IF_SUPPORTED(
       problem.SetParameterization(y, new IdentityParameterization(3)),
-      "Parameter block not found:");
+      "Parameter or Observation block not found:");
 }
 
 TEST(Problem, RemoveParameterBlockWithUnknownPtrDies) {

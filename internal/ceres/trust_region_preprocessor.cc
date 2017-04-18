@@ -297,7 +297,7 @@ void SetupMinimizerOptions(PreprocessedProblem* pp) {
   SetupCommonMinimizerOptions(pp);
   pp->minimizer_options.is_constrained =
       pp->reduced_program->IsBoundsConstrained();
-  pp->minimizer_options.jacobian.reset(pp->evaluator->CreateJacobian());
+  pp->minimizer_options.jacobian.reset(pp->evaluator->CreateJacobian_p());
   pp->minimizer_options.inner_iteration_minimizer =
       pp->inner_iteration_minimizer;
 
@@ -335,6 +335,7 @@ bool TrustRegionPreprocessor::Preprocess(const Solver::Options& options,
 
   pp->reduced_program.reset(
       program->CreateReducedProgram(&pp->removed_parameter_blocks,
+                                    &pp->removed_observation_blocks,
                                     &pp->fixed_cost,
                                     &pp->error));
 

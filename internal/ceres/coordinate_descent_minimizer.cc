@@ -229,7 +229,7 @@ void CoordinateDescentMinimizer::Solve(Program* program,
   minimizer_options.evaluator.reset(
       CHECK_NOTNULL(Evaluator::Create(evaluator_options_, program,  &error)));
   minimizer_options.jacobian.reset(
-      CHECK_NOTNULL(minimizer_options.evaluator->CreateJacobian()));
+      CHECK_NOTNULL(minimizer_options.evaluator->CreateJacobian_p()));
 
   TrustRegionStrategy::Options trs_options;
   trs_options.linear_solver = linear_solver;

@@ -100,7 +100,7 @@ struct PreprocessedProblem {
   shared_ptr<Evaluator> evaluator;
   shared_ptr<CoordinateDescentMinimizer> inner_iteration_minimizer;
 
-  std::vector<double*> removed_parameter_blocks;
+  std::vector<double*> removed_parameter_blocks,removed_observation_blocks;
   Vector reduced_parameters;
   double fixed_cost;
 };

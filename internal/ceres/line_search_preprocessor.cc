@@ -83,6 +83,7 @@ bool LineSearchPreprocessor::Preprocess(const Solver::Options& options,
 
   pp->reduced_program.reset(
       program->CreateReducedProgram(&pp->removed_parameter_blocks,
+                                    &pp->removed_observation_blocks,
                                     &pp->fixed_cost,
                                     &pp->error));
 

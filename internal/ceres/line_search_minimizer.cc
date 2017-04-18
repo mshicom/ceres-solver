@@ -81,7 +81,7 @@ bool Evaluate(Evaluator* evaluator,
 
   Vector negative_gradient = -state->gradient;
   Vector projected_gradient_step(x.size());
-  if (!evaluator->Plus(x.data(),
+  if (!evaluator->Plus_p(x.data(),
                        negative_gradient.data(),
                        projected_gradient_step.data())) {
     *message = "projected_gradient_step = Plus(x, -gradient) failed.";
@@ -335,7 +335,7 @@ void LineSearchMinimizer::Minimize(const Minimizer::Options& options,
 
     const double x_norm = x.norm();
 
-    if (!evaluator->Plus(x.data(), delta.data(), x_plus_delta.data())) {
+    if (!evaluator->Plus_p(x.data(), delta.data(), x_plus_delta.data())) {
       summary->termination_type = FAILURE;
       summary->message =
           "x_plus_delta = Plus(x, delta) failed. This should not happen "

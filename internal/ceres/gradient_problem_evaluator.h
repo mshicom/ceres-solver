@@ -48,22 +48,25 @@ class GradientProblemEvaluator : public Evaluator {
   explicit GradientProblemEvaluator(const GradientProblem& problem)
       : problem_(problem) {}
   virtual ~GradientProblemEvaluator() {}
-  virtual SparseMatrix* CreateJacobian() const { return NULL; }
+  virtual SparseMatrix* CreateJacobian_p() const { return NULL; }
   virtual bool Evaluate(const EvaluateOptions& evaluate_options,
-                        const double* state,
+                        const double* state_p,
+                        const double* /*state_o*/,
                         double* cost,
                         double* residuals,
-                        double* gradient,
-                        SparseMatrix* jacobian) {
-    CHECK(jacobian == NULL);
+                        double* gradient_p,
+                        double* /*gradient_o*/,
+                        SparseMatrix* jacobian_p,
+                        SparseMatrix* /*jacobian_o*/) {
+    CHECK(jacobian_p == NULL);
     ScopedExecutionTimer total_timer("Evaluator::Total", &execution_summary_);
     ScopedExecutionTimer call_type_timer(
-        gradient == NULL ? "Evaluator::Cost" : "Evaluator::Gradient",
+        gradient_p == NULL ? "Evaluator::Cost" : "Evaluator::Gradient",
         &execution_summary_);
-    return problem_.Evaluate(state, cost, gradient);
+    return problem_.Evaluate(state_p, cost, gradient_p);
   }
 
-  virtual bool Plus(const double* state,
+  virtual bool Plus_p(const double* state,
                     const double* delta,
                     double* state_plus_delta) const {
     return problem_.Plus(state, delta, state_plus_delta);

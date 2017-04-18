@@ -86,6 +86,9 @@ class CERES_EXPORT RelationFunction {
     return num_residuals_;
   }
 
+  bool HasObservationBlock() const {
+    return true;
+  }
  protected:
   std::vector<int32>* mutable_parameter_block_sizes() {
     return &parameter_block_sizes_;
@@ -96,6 +99,7 @@ class CERES_EXPORT RelationFunction {
   void set_num_residuals(int num_residuals) {
     num_residuals_ = num_residuals;
   }
+
 
  private:
   // Cost function signature metadata: number of inputs & their sizes,
@@ -187,6 +191,10 @@ public:
   using RelationFunction::parameter_block_sizes;
   using RelationFunction::observation_block_sizes;
   using RelationFunction::num_residuals;
+
+  bool HasObservationBlock() const {
+    return false;
+  }
 
 protected:
   using RelationFunction::mutable_parameter_block_sizes;

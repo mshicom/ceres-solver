@@ -254,7 +254,7 @@ bool Program::IsValid() const {
 
   state_offset = 0;
   delta_offset = 0;
-  for (int i = 0; i < parameter_blocks_.size(); ++i) {
+  for (int i = 0; i < observation_blocks_.size(); ++i) {
     const ObservationBlock* observation_block = observation_blocks_[i];
     if (observation_block->index() != i ||
         observation_block->state_offset() != state_offset ||
@@ -289,7 +289,7 @@ bool Program::ParameterBlocksAreFinite(string* message) const {
     }
   }
 
-  for (int i = 0; i < parameter_blocks_.size(); ++i) {
+  for (int i = 0; i < observation_blocks_.size(); ++i) {
     const ObservationBlock* observation_block = observation_blocks_[i];
     const double* array = observation_block->user_state();
     const int size = observation_block->Size();

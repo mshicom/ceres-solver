@@ -219,10 +219,15 @@ class CERES_EXPORT Problem {
       const std::vector<double*>& parameter_blocks);
 
   ResidualBlockId AddResidualBlock(
-      RelationFunction* constraint_function,
+      RelationFunction* relation_function,
       LossFunction* loss_function,
       const std::vector<double*>& parameter_blocks,
       const std::vector<double*>& observation_blocks);
+
+  ResidualBlockId AddResidualBlock(
+      RelationFunction* relation_function,
+      LossFunction* loss_function,
+      ...);
 
   // Convenience methods for adding residuals with a small number of
   // parameters. This is the common case. Instead of specifying the
@@ -482,6 +487,13 @@ class CERES_EXPORT Problem {
                 std::vector<double>* gradient,
                 CRSMatrix* jacobian);
 
+  bool Evaluate(const EvaluateOptions& options,
+                double* cost,
+                std::vector<double>* residuals,
+                std::vector<double>* gradient_p,
+                std::vector<double>* gradient_o,
+                CRSMatrix* jacobian_p,
+                CRSMatrix* jacobian_o);
  private:
   friend class Solver;
   friend class Covariance;

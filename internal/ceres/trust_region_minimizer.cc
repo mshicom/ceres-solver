@@ -190,7 +190,7 @@ bool TrustRegionMinimizer::IterationZero() {
 
   if (options_.is_constrained) {
     delta_.setZero();
-    if (!evaluator_->Plus(x_.data(), delta_.data(), candidate_x_.data())) {
+    if (!evaluator_->Plus_p(x_.data(), delta_.data(), candidate_x_.data())) {
       solver_summary_->message =
           "Unable to project initial point onto the feasible set.";
       solver_summary_->termination_type = FAILURE;
@@ -263,7 +263,7 @@ bool TrustRegionMinimizer::EvaluateGradientAndJacobian() {
   // ambient space, adds it to x and projects it on the hypercube
   // defined by the bounds.
   negative_gradient_ = -gradient_;
-  if (!evaluator_->Plus(x_.data(),
+  if (!evaluator_->Plus_p(x_.data(),
                         negative_gradient_.data(),
                         projected_gradient_step_.data())) {
     solver_summary_->message =
@@ -716,7 +716,7 @@ bool TrustRegionMinimizer::FunctionToleranceReached() {
 // cases/constraints as part of the LocalParameterization and
 // CostFunction objects.
 void TrustRegionMinimizer::ComputeCandidatePointAndEvaluateCost() {
-  if (!evaluator_->Plus(x_.data(), delta_.data(), candidate_x_.data())) {
+  if (!evaluator_->Plus_p(x_.data(), delta_.data(), candidate_x_.data())) {
     LOG_IF(WARNING, is_not_silent_)
         << "x_plus_delta = Plus(x, delta) failed. "
         << "Treating it as a step with infinite cost";

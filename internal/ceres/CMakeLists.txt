@@ -72,17 +72,17 @@ set(CERES_INTERNAL_SRC
     iterative_schur_complement_solver.cc
     levenberg_marquardt_strategy.cc
     lapack.cc
-#    line_search.cc
-#    line_search_direction.cc
-#    line_search_minimizer.cc
-#    line_search_preprocessor.cc
+    line_search.cc
+    line_search_direction.cc
+    line_search_minimizer.cc
+    line_search_preprocessor.cc
     linear_least_squares_problems.cc
     linear_operator.cc
     linear_solver.cc
     local_parameterization.cc
     loss_function.cc
     low_rank_inverse_hessian.cc
-#    minimizer.cc
+    minimizer.cc
     normal_prior.cc
     parameter_block_ordering.cc
     partitioned_matrix_view.cc
@@ -100,7 +100,7 @@ set(CERES_INTERNAL_SRC
     schur_jacobi_preconditioner.cc
     scratch_evaluate_preparer.cc
     single_linkage_clustering.cc
-#    solver.cc
+    solver.cc
     solver_utils.cc
     sparse_matrix.cc
     sparse_normal_cholesky_solver.cc
@@ -108,10 +108,10 @@ set(CERES_INTERNAL_SRC
     stringprintf.cc
     suitesparse.cc
     triplet_sparse_matrix.cc
-#    trust_region_preprocessor.cc
-#    trust_region_minimizer.cc
-#    trust_region_step_evaluator.cc
-#    trust_region_strategy.cc
+    trust_region_preprocessor.cc
+    trust_region_minimizer.cc
+    trust_region_step_evaluator.cc
+    trust_region_strategy.cc
     types.cc
     visibility.cc
     visibility_based_preconditioner.cc
@@ -295,57 +295,57 @@ if (BUILD_TESTING AND GFLAGS)
   ceres_test(block_random_access_diagonal_matrix)
   ceres_test(block_random_access_sparse_matrix)
   ceres_test(block_sparse_matrix)
-#  ceres_test(bundle_adjustment)
-#  ceres_test(c_api)
-#  ceres_test(canonical_views_clustering)
+  ceres_test(bundle_adjustment)
+  ceres_test(c_api)
+  ceres_test(canonical_views_clustering)
   ceres_test(compressed_row_sparse_matrix)
-#  ceres_test(conditioned_cost_function)
-#  ceres_test(corrector)
-#  ceres_test(cost_function_to_functor)
-#  ceres_test(covariance)
-#  ceres_test(cubic_interpolation)
-#  ceres_test(detect_structure)
+  ceres_test(conditioned_cost_function)
+  ceres_test(corrector)
+  ceres_test(cost_function_to_functor)
+  ceres_test(covariance)
+  ceres_test(cubic_interpolation)
+  ceres_test(detect_structure)
   ceres_test(dense_sparse_matrix)
   ceres_test(dynamic_autodiff_cost_function)
   ceres_test(dynamic_compressed_row_sparse_matrix)
-#  ceres_test(dynamic_numeric_diff_cost_function)
+  ceres_test(dynamic_numeric_diff_cost_function)
   ceres_test(evaluator)
-#  ceres_test(gradient_checker)
-#  ceres_test(gradient_checking_cost_function)
-#  ceres_test(gradient_problem)
-#  ceres_test(gradient_problem_solver)
-#  ceres_test(graph)
-#  ceres_test(graph_algorithms)
-#  ceres_test(householder_vector)
-#  ceres_test(is_close)
-#  ceres_test(implicit_schur_complement)
-#  ceres_test(iterative_schur_complement_solver)
+  ceres_test(gradient_checker)
+  ceres_test(gradient_checking_cost_function)
+  ceres_test(gradient_problem)
+  ceres_test(gradient_problem_solver)
+  ceres_test(graph)
+  ceres_test(graph_algorithms)
+  ceres_test(householder_vector)
+  ceres_test(is_close)
+  ceres_test(implicit_schur_complement)
+  ceres_test(iterative_schur_complement_solver)
   ceres_test(jet)
-#  ceres_test(levenberg_marquardt_strategy)
-#  ceres_test(dogleg_strategy)
-#  ceres_test(line_search_preprocessor)
+  ceres_test(levenberg_marquardt_strategy)
+  ceres_test(dogleg_strategy)
+  ceres_test(line_search_preprocessor)
   ceres_test(local_parameterization)
   ceres_test(loss_function)
-#  ceres_test(minimizer)
-#  ceres_test(normal_prior)
-#  ceres_test(numeric_diff_cost_function)
-#  ceres_test(ordered_groups)
-#  ceres_test(parameter_block)
-#  ceres_test(parameter_block_ordering)
-#  ceres_test(partitioned_matrix_view)
-#  ceres_test(polynomial)
-#  ceres_test(problem)
-#  ceres_test(program)
-#  ceres_test(reorder_program)
-#  ceres_test(residual_block)
-#  ceres_test(residual_block_utils)
-#  ceres_test(rotation)
-#  ceres_test(schur_complement_solver)
-#  ceres_test(schur_eliminator)
-#  ceres_test(single_linkage_clustering)
-#  ceres_test(small_blas)
-#  ceres_test(solver)
-#  ceres_test(gauss_helmert_problem)
+  ceres_test(minimizer)
+  ceres_test(normal_prior)
+  ceres_test(numeric_diff_cost_function)
+  ceres_test(ordered_groups)
+  ceres_test(parameter_block)
+  ceres_test(parameter_block_ordering)
+  ceres_test(partitioned_matrix_view)
+  ceres_test(polynomial)
+  ceres_test(problem)
+  ceres_test(program)
+  ceres_test(reorder_program)
+  ceres_test(residual_block)
+  ceres_test(residual_block_utils)
+  ceres_test(rotation)
+  ceres_test(schur_complement_solver)
+  ceres_test(schur_eliminator)
+  ceres_test(single_linkage_clustering)
+  ceres_test(small_blas)
+  ceres_test(solver)
+  ceres_test(gauss_helmert_problem)
 
   # TODO(sameeragarwal): This test should ultimately be made
   # independent of SuiteSparse.
@@ -355,14 +355,14 @@ if (BUILD_TESTING AND GFLAGS)
                           ${SUITESPARSE_LIBRARIES})
   endif (SUITESPARSE AND SUITESPARSE_FOUND)
 
-#  ceres_test(symmetric_linear_solver)
-#  ceres_test(triplet_sparse_matrix)
-#  ceres_test(trust_region_minimizer)
-#  ceres_test(trust_region_preprocessor)
-#  ceres_test(unsymmetric_linear_solver)
-#  ceres_test(visibility)
-#  ceres_test(visibility_based_preconditioner)
+  ceres_test(symmetric_linear_solver)
+  ceres_test(triplet_sparse_matrix)
+  ceres_test(trust_region_minimizer)
+  ceres_test(trust_region_preprocessor)
+  ceres_test(unsymmetric_linear_solver)
+  ceres_test(visibility)
+  ceres_test(visibility_based_preconditioner)
 
   # Put the large end to end test last.
-#  ceres_test(system)
+  ceres_test(system)
 endif (BUILD_TESTING AND GFLAGS)

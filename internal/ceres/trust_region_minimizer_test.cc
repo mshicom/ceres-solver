@@ -75,7 +75,7 @@ class PowellEvaluator2 : public Evaluator {
   virtual ~PowellEvaluator2() {}
 
   // Implementation of Evaluator interface.
-  virtual SparseMatrix* CreateJacobian() const {
+  virtual SparseMatrix* CreateJacobian_p() const {
     CHECK(col1 || col2 || col3 || col4);
     DenseSparseMatrix* dense_jacobian =
         new DenseSparseMatrix(NumResiduals(), NumEffectiveParameters());
@@ -84,11 +84,11 @@ class PowellEvaluator2 : public Evaluator {
   }
 
   virtual bool Evaluate(const Evaluator::EvaluateOptions& evaluate_options,
-                        const double* state,
+                        const double* state, const double* /*state*/,
                         double* cost,
                         double* residuals,
-                        double* gradient,
-                        SparseMatrix* jacobian) {
+                        double* gradient, double* /*gradient*/,
+                        SparseMatrix* jacobian, SparseMatrix* /*jacobian*/) {
     const double x1 = state[0];
     const double x2 = state[1];
     const double x3 = state[2];
@@ -188,7 +188,7 @@ class PowellEvaluator2 : public Evaluator {
     return true;
   }
 
-  virtual bool Plus(const double* state,
+  virtual bool Plus_p(const double* state,
                     const double* delta,
                     double* state_plus_delta) const {
     int delta_index = 0;
@@ -231,7 +231,7 @@ void IsTrustRegionSolveSuccessful(TrustRegionStrategyType strategy_type) {
   minimizer_options.evaluator.reset(
       new PowellEvaluator2<col1, col2, col3, col4>);
   minimizer_options.jacobian.reset(
-      minimizer_options.evaluator->CreateJacobian());
+      minimizer_options.evaluator->CreateJacobian_p());
 
   TrustRegionStrategy::Options trust_region_strategy_options;
   trust_region_strategy_options.trust_region_strategy_type = strategy_type;

@@ -32,8 +32,11 @@
 #include "ceres/problem.h"
 
 #include <vector>
+#include <cstdarg>
+
 #include "ceres/crs_matrix.h"
 #include "ceres/problem_impl.h"
+#include "ceres/cost_function.h"
 
 namespace ceres {
 
@@ -51,6 +54,42 @@ ResidualBlockId Problem::AddResidualBlock(
   return problem_impl_->AddResidualBlock(cost_function,
                                          loss_function,
                                          parameter_blocks);
+}
+
+ResidualBlockId Problem::AddResidualBlock(
+    RelationFunction* relation_function,
+    LossFunction* loss_function,
+    ...) {
+
+    const size_t num_parameter_blocks = relation_function->parameter_block_sizes().size();
+    const size_t num_observation_blocks = relation_function->observation_block_sizes().size();
+
+    vector<double*> parameters(num_parameter_blocks);
+    vector<double*> observations(num_observation_blocks);
+
+    va_list arguments;                     // A place to store the list of arguments
+    va_start ( arguments, loss_function );           // Initializing arguments to store all values after loss_function
+    for(size_t i=0; i < num_parameter_blocks; i++) {
+        parameters[i] = va_arg ( arguments, double* );
+    }
+
+    for(size_t i=0; i < num_observation_blocks; i++) {
+        observations[i] = va_arg ( arguments, double* );
+    }
+    va_end ( arguments );                  // Cleans up the list
+
+    return problem_impl_->AddResidualBlock(relation_function, loss_function, parameters, observations);
+}
+
+ResidualBlockId Problem::AddResidualBlock(
+    RelationFunction* relation_function,
+    LossFunction* loss_function,
+    const vector<double*>& parameter_blocks,
+    const vector<double*>& observation_blocks) {
+  return problem_impl_->AddResidualBlock(relation_function,
+                                         loss_function,
+                                         parameter_blocks,
+                                         observation_blocks);
 }
 
 ResidualBlockId Problem::AddResidualBlock(
@@ -212,6 +251,19 @@ bool Problem::Evaluate(const EvaluateOptions& evaluate_options,
                                  gradient,
                                  jacobian);
 }
+bool Problem::Evaluate(const Problem::EvaluateOptions& options,
+              double* cost,
+              std::vector<double>* residuals,
+              std::vector<double>* gradient_p,
+              std::vector<double>* gradient_o,
+              CRSMatrix* jacobian_p,
+              CRSMatrix* jacobian_o){
+    return problem_impl_->Evaluate(options,
+                                   cost,residuals,
+                                   gradient_p,gradient_o,
+                                   jacobian_p,jacobian_o);
+}
+
 
 int Problem::NumParameterBlocks() const {
   return problem_impl_->NumParameterBlocks();
