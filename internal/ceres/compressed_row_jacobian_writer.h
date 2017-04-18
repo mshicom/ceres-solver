@@ -63,7 +63,10 @@ class CompressedRowJacobianWriter {
   // writers which use CompressedRowSparseMatrix (or derived types).
   // (Jacobian writers do not fall under any type hierarchy; they only
   // have to provide an interface as specified in program_evaluator.h).
-  static void PopulateJacobianRowAndColumnBlockVectors(
+  static void PopulateJacobianRowAndColumnBlockVectors_p(
+      const Program* program,
+      CompressedRowSparseMatrix* jacobian);
+  static void PopulateJacobianRowAndColumnBlockVectors_o(
       const Program* program,
       CompressedRowSparseMatrix* jacobian);
 
@@ -85,6 +88,11 @@ class CompressedRowJacobianWriter {
       int residual_id,
       std::vector<std::pair<int, int> >* evaluated_jacobian_blocks);
 
+  static void GetOrderedObservationBlocks(
+      const Program* program,
+      int residual_id,
+      std::vector<std::pair<int, int> >* evaluated_jacobian_blocks);
+
   // JacobianWriter interface.
 
   // Since the compressed row matrix has different layout than that
@@ -95,9 +103,15 @@ class CompressedRowJacobianWriter {
     return ScratchEvaluatePreparer::Create(*program_, num_threads);
   }
 
-  SparseMatrix* CreateJacobian() const;
+  SparseMatrix* CreateJacobian_p() const;
+  SparseMatrix* CreateJacobian_o() const;
 
-  void Write(int residual_id,
+  void Write_p(int residual_id,
+             int residual_offset,
+             double **jacobians,
+             SparseMatrix* base_jacobian);
+
+  void Write_o(int residual_id,
              int residual_offset,
              double **jacobians,
              SparseMatrix* base_jacobian);

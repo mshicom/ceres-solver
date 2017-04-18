@@ -96,9 +96,19 @@ class Evaluator {
                        int num_threads,
                        double* cost,
                        std::vector<double>* residuals,
-                       std::vector<double>* gradient,
-                       CRSMatrix* jacobian);
+                       std::vector<double>* gradient_p,
+                       std::vector<double>* gradient_o,
+                       CRSMatrix* jacobian_p,
+                       CRSMatrix* jacobian_o);
 
+  static bool Evaluate(Program* program,
+                       int num_threads,
+                       double* cost,
+                       std::vector<double>* residuals,
+                       std::vector<double>* gradient_p,
+                       CRSMatrix* jacobian_p) {
+      return Evaluate(program, num_threads, cost, residuals, gradient_p, NULL, jacobian_p, NULL);
+  }
   // Build and return a sparse matrix for storing and working with the Jacobian
   // of the objective function. The jacobian has dimensions
   // NumEffectiveParameters() by NumParameters(), and is typically extremely
@@ -115,8 +125,8 @@ class Evaluator {
   // the jacobian for use with CHOLMOD, where as BlockOptimizationProblem
   // creates a BlockSparseMatrix representation of the jacobian for use in the
   // Schur complement based methods.
-  virtual SparseMatrix* CreateJacobian() const = 0;
-
+  virtual SparseMatrix* CreateJacobian_p() const = 0;
+  virtual SparseMatrix* CreateJacobian_o() const { return NULL; }
 
   // Options struct to control Evaluator::Evaluate;
   struct EvaluateOptions {
@@ -139,26 +149,41 @@ class Evaluator {
   // state is an array of size NumParameters(), cost is a pointer to a single
   // double, and residuals is an array of doubles of size NumResiduals().
   virtual bool Evaluate(const EvaluateOptions& evaluate_options,
-                        const double* state,
+                        const double* state_p, const double* state_o,
                         double* cost,
                         double* residuals,
-                        double* gradient,
-                        SparseMatrix* jacobian) = 0;
+                        double* gradient_p,
+                        double* gradient_o,
+                        SparseMatrix* jacobian_p,
+                        SparseMatrix* jacobian_o) = 0;
+
+  // To be compatible with old api.
+  virtual bool Evaluate(const double* state_p,
+                        double* cost,
+                        double* residuals,
+                        double* gradient_p,
+                        SparseMatrix* jacobian_p) {
+      DCHECK_EQ(NumEffectiveObservations(), 0)
+              << "state_o should be provided!";
+    return Evaluate(state_p, NULL, cost, residuals, gradient_p, NULL, jacobian_p, NULL);
+  }
 
   // Variant of Evaluator::Evaluate where the user wishes to use the
   // default EvaluateOptions struct. This is mostly here as a
   // convenience method.
-  bool Evaluate(const double* state,
+  bool Evaluate(const double* state_p, const double* state_o,
                 double* cost,
                 double* residuals,
-                double* gradient,
-                SparseMatrix* jacobian) {
+                double* gradient_p,
+                double* gradient_o,
+                SparseMatrix* jacobian_p,
+                SparseMatrix* jacobian_o) {
     return Evaluate(EvaluateOptions(),
-                    state,
+                    state_p, state_o,
                     cost,
                     residuals,
-                    gradient,
-                    jacobian);
+                    gradient_p, gradient_o,
+                    jacobian_p, jacobian_o);
   }
 
   // Make a change delta (of size NumEffectiveParameters()) to state (of size
@@ -172,16 +197,22 @@ class Evaluator {
   // like quaternions. This is the same as the "Plus()" operation in
   // local_parameterization.h, but operating over the entire state vector for a
   // problem.
-  virtual bool Plus(const double* state,
+  virtual bool Plus_p(const double* state,
                     const double* delta,
                     double* state_plus_delta) const = 0;
 
+  virtual bool Plus_o(const double* state,
+                    const double* delta,
+                    double* state_plus_delta) const {}
+
   // The number of parameters in the optimization problem.
   virtual int NumParameters() const = 0;
+  virtual int NumObservations() const { return 0;}
 
   // This is the effective number of parameters that the optimizer may adjust.
   // This applies when there are parameterizations on some of the parameters.
   virtual int NumEffectiveParameters()  const = 0;
+  virtual int NumEffectiveObservations()  const { return 0;}
 
   // The number of residuals in the optimization problem.
   virtual int NumResiduals() const = 0;

@@ -47,7 +47,7 @@ DynamicCompressedRowJacobianWriter::CreateEvaluatePreparers(int num_threads) {
   return ScratchEvaluatePreparer::Create(*program_, num_threads);
 }
 
-SparseMatrix* DynamicCompressedRowJacobianWriter::CreateJacobian() const {
+SparseMatrix* DynamicCompressedRowJacobianWriter::CreateJacobian_p() const {
   // Initialize `jacobian` with zero number of `max_num_nonzeros`.
   const int num_residuals = program_->NumResiduals();
   const int num_effective_parameters = program_->NumEffectiveParameters();
@@ -69,8 +69,30 @@ SparseMatrix* DynamicCompressedRowJacobianWriter::CreateJacobian() const {
 
   return jacobian;
 }
+SparseMatrix* DynamicCompressedRowJacobianWriter::CreateJacobian_o() const {
+  // Initialize `jacobian` with zero number of `max_num_nonzeros`.
+  const int num_residuals = program_->NumResiduals();
+  const int num_effective_observations = program_->NumEffectiveObservations();
 
-void DynamicCompressedRowJacobianWriter::Write(int residual_id,
+  DynamicCompressedRowSparseMatrix* jacobian =
+      new DynamicCompressedRowSparseMatrix(num_residuals,
+                                           num_effective_observations,
+                                           0);
+
+  vector<int>* row_blocks = jacobian->mutable_row_blocks();
+  for (int i = 0; i < jacobian->num_rows(); ++i) {
+    row_blocks->push_back(1);
+  }
+
+  vector<int>* col_blocks = jacobian->mutable_col_blocks();
+  for (int i = 0; i < jacobian->num_cols(); ++i) {
+    col_blocks->push_back(1);
+  }
+
+  return jacobian;
+}
+
+void DynamicCompressedRowJacobianWriter::Write_p(int residual_id,
                                                int residual_offset,
                                                double **jacobians,
                                                SparseMatrix* base_jacobian) {
@@ -107,6 +129,49 @@ void DynamicCompressedRowJacobianWriter::Write(int residual_id,
         if (v != 0.0) {
           jacobian->InsertEntry(
             residual_offset + r, parameter_block->delta_offset() + c, v);
+        }
+      }
+    }
+  }
+}
+
+void DynamicCompressedRowJacobianWriter::Write_o(int residual_id,
+                                               int residual_offset,
+                                               double **jacobians,
+                                               SparseMatrix* base_jacobian) {
+  DynamicCompressedRowSparseMatrix* jacobian =
+    down_cast<DynamicCompressedRowSparseMatrix*>(base_jacobian);
+
+  // Get the `residual_block` of interest.
+  const ResidualBlock* residual_block =
+      program_->residual_blocks()[residual_id];
+  const int num_residuals = residual_block->NumResiduals();
+
+  vector<pair<int, int> > evaluated_jacobian_blocks;
+  CompressedRowJacobianWriter::GetOrderedObservationBlocks(
+    program_, residual_id, &evaluated_jacobian_blocks);
+
+  // `residual_offset` is the residual row in the global jacobian.
+  // Empty the jacobian rows.
+  jacobian->ClearRows(residual_offset, num_residuals);
+
+  // Iterate over each observation block.
+  for (int i = 0; i < evaluated_jacobian_blocks.size(); ++i) {
+    const ObservationBlock* observation_block =
+        program_->observation_blocks()[evaluated_jacobian_blocks[i].first];
+    const int observation_block_jacobian_index =
+        evaluated_jacobian_blocks[i].second;
+    const int observation_block_size = observation_block->LocalSize();
+
+    // For each observation block only insert its non-zero entries.
+    for (int r = 0; r < num_residuals; ++r) {
+      for (int c = 0; c < observation_block_size; ++c) {
+        const double& v = jacobians[observation_block_jacobian_index][
+            r * observation_block_size + c];
+        // Only insert non-zero entries.
+        if (v != 0.0) {
+          jacobian->InsertEntry(
+            residual_offset + r, observation_block->delta_offset() + c, v);
         }
       }
     }

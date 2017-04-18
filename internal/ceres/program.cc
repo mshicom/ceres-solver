@@ -59,11 +59,16 @@ Program::Program() {}
 
 Program::Program(const Program& program)
     : parameter_blocks_(program.parameter_blocks_),
+      observation_blocks_(program.observation_blocks_),
       residual_blocks_(program.residual_blocks_) {
 }
 
 const vector<ParameterBlock*>& Program::parameter_blocks() const {
   return parameter_blocks_;
+}
+
+const vector<ObservationBlock*>& Program::observation_blocks() const {
+  return observation_blocks_;
 }
 
 const vector<ResidualBlock*>& Program::residual_blocks() const {
@@ -72,6 +77,10 @@ const vector<ResidualBlock*>& Program::residual_blocks() const {
 
 vector<ParameterBlock*>* Program::mutable_parameter_blocks() {
   return &parameter_blocks_;
+}
+
+vector<ObservationBlock*>* Program::mutable_observation_blocks() {
+  return &observation_blocks_;
 }
 
 vector<ResidualBlock*>* Program::mutable_residual_blocks() {
@@ -112,7 +121,41 @@ bool Program::SetParameterBlockStatePtrsToUserStatePtrs() {
   return true;
 }
 
-bool Program::Plus(const double* state,
+bool Program::StateVectorToObservationBlocks(const double *state) {
+  for (size_t i = 0; i < observation_blocks_.size(); ++i) {
+    if (!observation_blocks_[i]->IsConstant() &&
+        !observation_blocks_[i]->SetState(state)) {
+      return false;
+    }
+    state += observation_blocks_[i]->Size();
+  }
+  return true;
+}
+
+void Program::ObservationBlocksToStateVector(double *state) const {
+  for (size_t i = 0; i < observation_blocks_.size(); ++i) {
+    observation_blocks_[i]->GetState(state);
+    state += observation_blocks_[i]->Size();
+  }
+}
+
+void Program::CopyObservationBlockStateToUserState() {
+  for (size_t i = 0; i < observation_blocks_.size(); ++i) {
+    observation_blocks_[i]->GetState(observation_blocks_[i]->mutable_user_state());
+  }
+}
+
+bool Program::SetObservationBlockStatePtrsToUserStatePtrs() {
+  for (size_t i = 0; i < observation_blocks_.size(); ++i) {
+    if (!observation_blocks_[i]->IsConstant() &&
+        !observation_blocks_[i]->SetState(observation_blocks_[i]->user_state())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool Program::Plus_p(const double* state,
                    const double* delta,
                    double* state_plus_delta) const {
   for (int i = 0; i < parameter_blocks_.size(); ++i) {
@@ -122,6 +165,20 @@ bool Program::Plus(const double* state,
     state += parameter_blocks_[i]->Size();
     delta += parameter_blocks_[i]->LocalSize();
     state_plus_delta += parameter_blocks_[i]->Size();
+  }
+  return true;
+}
+
+bool Program::Plus_o(const double* state,
+                   const double* delta,
+                   double* state_plus_delta) const {
+  for (size_t i = 0; i < observation_blocks_.size(); ++i) {
+    if (!observation_blocks_[i]->Plus(state, delta, state_plus_delta)) {
+      return false;
+    }
+    state += observation_blocks_[i]->Size();
+    delta += observation_blocks_[i]->LocalSize();
+    state_plus_delta += observation_blocks_[i]->Size();
   }
   return true;
 }
@@ -144,6 +201,27 @@ void Program::SetParameterOffsetsAndIndex() {
     parameter_blocks_[i]->set_delta_offset(delta_offset);
     state_offset += parameter_blocks_[i]->Size();
     delta_offset += parameter_blocks_[i]->LocalSize();
+  }
+}
+
+void Program::SetObservationOffsetsAndIndex() {
+  // Set positions for all parameters appearing as arguments to residuals to one
+  // past the end of the parameter block array.
+  for (size_t i = 0; i < residual_blocks_.size(); ++i) {
+    ResidualBlock* residual_block = residual_blocks_[i];
+    for (size_t j = 0; j < residual_block->NumObservationBlocks(); ++j) {
+      residual_block->observation_blocks()[j]->set_index(-1);
+    }
+  }
+  // For observations that appear in the program, set their position and offset.
+  int state_offset = 0;
+  int delta_offset = 0;
+  for (size_t i = 0; i < observation_blocks_.size(); ++i) {
+    observation_blocks_[i]->set_index(i);
+    observation_blocks_[i]->set_state_offset(state_offset);
+    observation_blocks_[i]->set_delta_offset(delta_offset);
+    state_offset += observation_blocks_[i]->Size();
+    delta_offset += observation_blocks_[i]->LocalSize();
   }
 }
 
@@ -174,6 +252,22 @@ bool Program::IsValid() const {
     delta_offset += parameter_blocks_[i]->LocalSize();
   }
 
+  state_offset = 0;
+  delta_offset = 0;
+  for (int i = 0; i < parameter_blocks_.size(); ++i) {
+    const ObservationBlock* observation_block = observation_blocks_[i];
+    if (observation_block->index() != i ||
+        observation_block->state_offset() != state_offset ||
+        observation_block->delta_offset() != delta_offset) {
+      LOG(WARNING) << "Parameter block: " << i
+                   << "has incorrect indexing information: "
+                   << observation_block->ToString();
+      return false;
+    }
+
+    state_offset += observation_blocks_[i]->Size();
+    delta_offset += observation_blocks_[i]->LocalSize();
+  }
   return true;
 }
 
@@ -189,6 +283,22 @@ bool Program::ParameterBlocksAreFinite(string* message) const {
           "ParameterBlock: %p with size %d has at least one invalid value.\n"
           "First invalid value is at index: %d.\n"
           "Parameter block values: ",
+          array, size, invalid_index);
+      AppendArrayToString(size, array, message);
+      return false;
+    }
+  }
+
+  for (int i = 0; i < parameter_blocks_.size(); ++i) {
+    const ObservationBlock* observation_block = observation_blocks_[i];
+    const double* array = observation_block->user_state();
+    const int size = observation_block->Size();
+    const int invalid_index = FindInvalidValue(size, array);
+    if (invalid_index != size) {
+      *message = StringPrintf(
+          "ObservationBlock: %p with size %d has at least one invalid value.\n"
+          "First invalid value is at index: %d.\n"
+          "ObservationBlock block values: ",
           array, size, invalid_index);
       AppendArrayToString(size, array, message);
       return false;
@@ -268,27 +378,33 @@ bool Program::IsFeasible(string* message) const {
 
 Program* Program::CreateReducedProgram(
     vector<double*>* removed_parameter_blocks,
+    vector<double*>* removed_observation_blocks,
     double* fixed_cost,
     string* error) const {
   CHECK_NOTNULL(removed_parameter_blocks);
+  CHECK_NOTNULL(removed_observation_blocks);
   CHECK_NOTNULL(fixed_cost);
   CHECK_NOTNULL(error);
 
   scoped_ptr<Program> reduced_program(new Program(*this));
   if (!reduced_program->RemoveFixedBlocks(removed_parameter_blocks,
+                                          removed_observation_blocks,
                                           fixed_cost,
                                           error)) {
     return NULL;
   }
 
   reduced_program->SetParameterOffsetsAndIndex();
+  reduced_program->SetObservationOffsetsAndIndex();
   return reduced_program.release();
 }
 
 bool Program::RemoveFixedBlocks(vector<double*>* removed_parameter_blocks,
+                                vector<double*>* removed_observation_blocks,
                                 double* fixed_cost,
                                 string* error) {
   CHECK_NOTNULL(removed_parameter_blocks);
+  CHECK_NOTNULL(removed_observation_blocks);
   CHECK_NOTNULL(fixed_cost);
   CHECK_NOTNULL(error);
 
@@ -301,6 +417,9 @@ bool Program::RemoveFixedBlocks(vector<double*>* removed_parameter_blocks,
   // parameter blocks for the marking.
   for (int i = 0; i < parameter_blocks_.size(); ++i) {
     parameter_blocks_[i]->set_index(-1);
+  }
+  for (int i = 0; i < observation_blocks_.size(); ++i) {
+    observation_blocks_[i]->set_index(-1);
   }
 
   // Filter out residual that have all-constant parameters, and mark
@@ -318,6 +437,15 @@ bool Program::RemoveFixedBlocks(vector<double*>* removed_parameter_blocks,
       if (!parameter_block->IsConstant()) {
         all_constant = false;
         parameter_block->set_index(1);
+      }
+    }
+
+    int num_observation_blocks = residual_block->NumObservationBlocks();
+    for (int k = 0; k < num_observation_blocks; k++) {
+        ObservationBlock* obsevation_block = residual_block->observation_blocks()[k];
+      if (!obsevation_block->IsConstant()) {
+        all_constant = false;
+        obsevation_block->set_index(1);
       }
     }
 
@@ -355,6 +483,18 @@ bool Program::RemoveFixedBlocks(vector<double*>* removed_parameter_blocks,
     }
   }
   parameter_blocks_.resize(num_active_parameter_blocks);
+
+  int num_active_observation_blocks = 0;
+  for (int i = 0; i < observation_blocks_.size(); ++i) {
+    ObservationBlock* observation_block = observation_blocks_[i];
+    if (observation_block->index() == -1) {
+      removed_observation_blocks->push_back(
+          observation_block->mutable_user_state());
+    } else {
+      observation_blocks_[num_active_observation_blocks++] = observation_block;
+    }
+  }
+  observation_blocks_.resize(num_active_observation_blocks);
 
   if (!(((NumResidualBlocks() == 0) &&
          (NumParameterBlocks() == 0)) ||
@@ -441,6 +581,10 @@ int Program::NumParameterBlocks() const {
   return parameter_blocks_.size();
 }
 
+int Program::NumObservationBlocks() const {
+  return observation_blocks_.size();
+}
+
 int Program::NumResiduals() const {
   int num_residuals = 0;
   for (int i = 0; i < residual_blocks_.size(); ++i) {
@@ -465,6 +609,22 @@ int Program::NumEffectiveParameters() const {
   return num_parameters;
 }
 
+int Program::NumObservations() const {
+  int num_observations = 0;
+  for (int i = 0; i < observation_blocks_.size(); ++i) {
+    num_observations += observation_blocks_[i]->Size();
+  }
+  return num_observations;
+}
+
+int Program::NumEffectiveObservations() const {
+  int num_observations = 0;
+  for (int i = 0; i < observation_blocks_.size(); ++i) {
+    num_observations += observation_blocks_[i]->LocalSize();
+  }
+  return num_observations;
+}
+
 int Program::MaxScratchDoublesNeededForEvaluate() const {
   // Compute the scratch space needed for evaluate.
   int max_scratch_bytes_for_evaluate = 0;
@@ -477,18 +637,23 @@ int Program::MaxScratchDoublesNeededForEvaluate() const {
 }
 
 int Program::MaxDerivativesPerResidualBlock() const {
-  int max_derivatives = 0;
-  for (int i = 0; i < residual_blocks_.size(); ++i) {
-    int derivatives = 0;
-    ResidualBlock* residual_block = residual_blocks_[i];
-    int num_parameters = residual_block->NumParameterBlocks();
-    for (int j = 0; j < num_parameters; ++j) {
-      derivatives += residual_block->NumResiduals() *
-                     residual_block->parameter_blocks()[j]->LocalSize();
+    int max_derivatives = 0;
+    for (int i = 0; i < residual_blocks_.size(); ++i) {
+      int derivatives_p = 0, derivatives_o = 0;
+      ResidualBlock* residual_block = residual_blocks_[i];
+      int num_parameters = residual_block->NumParameterBlocks();
+      for (int j = 0; j < num_parameters; ++j) {
+        derivatives_p += residual_block->NumResiduals() *
+                       residual_block->parameter_blocks()[j]->LocalSize();
+      }
+      int num_observations = residual_block->NumObservationBlocks();
+      for (int j = 0; j < num_observations; ++j) {
+        derivatives_o += residual_block->NumResiduals() *
+                       residual_block->observation_blocks()[j]->LocalSize();
+      }
+      max_derivatives = max(max_derivatives, max(derivatives_p, derivatives_o));
     }
-    max_derivatives = max(max_derivatives, derivatives);
-  }
-  return max_derivatives;
+    return max_derivatives;
 }
 
 int Program::MaxParametersPerResidualBlock() const {
@@ -498,6 +663,15 @@ int Program::MaxParametersPerResidualBlock() const {
                          residual_blocks_[i]->NumParameterBlocks());
   }
   return max_parameters;
+}
+
+int Program::MaxObservationsPerResidualBlock() const {
+  int max_observations = 0;
+  for (int i = 0; i < residual_blocks_.size(); ++i) {
+    max_observations = max(max_observations,
+                         residual_blocks_[i]->NumObservationBlocks());
+  }
+  return max_observations;
 }
 
 int Program::MaxResidualsPerResidualBlock() const {
@@ -516,6 +690,13 @@ string Program::ToString() const {
   for (int i = 0; i < parameter_blocks_.size(); ++i) {
     ret += StringPrintf("%d: %s\n",
                         i, parameter_blocks_[i]->ToString().c_str());
+  }
+  ret += StringPrintf("Number of observation blocks: %d\n", NumObservationBlocks());
+  ret += StringPrintf("Number of observation: %d\n", NumObservations());
+  ret += "Observation:\n";
+  for (int i = 0; i < observation_blocks_.size(); ++i) {
+    ret += StringPrintf("%d: %s\n",
+                        i, observation_blocks_[i]->ToString().c_str());
   }
   return ret;
 }

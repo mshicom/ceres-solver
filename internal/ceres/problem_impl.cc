@@ -144,6 +144,66 @@ ParameterBlock* ProblemImpl::InternalAddParameterBlock(double* values,
   return new_parameter_block;
 }
 
+ObservationBlock* ProblemImpl::InternalAddObservationBlock(double* values,
+                                                       int size) {
+  CHECK(values != NULL) << "Null pointer passed to AddParameterBlock "
+                        << "for a parameter with size " << size;
+
+  // Ignore the request if there is a block for the given pointer already.
+  ObservationMap::iterator it = observation_block_map_.find(values);
+  if (it != observation_block_map_.end()) {
+    if (!options_.disable_all_safety_checks) {
+      int existing_size = it->second->Size();
+      CHECK(size == existing_size)
+          << "Tried adding a observation block with the same double pointer, "
+          << values << ", twice, but with different block sizes. Original "
+          << "size was " << existing_size << " but new size is "
+          << size;
+    }
+    return it->second;
+  }
+
+  if (!options_.disable_all_safety_checks) {
+    // Before adding the observation block, also check that it doesn't alias any
+    // other observation blocks.
+    if (!observation_block_map_.empty()) {
+      ObservationMap::iterator lb = observation_block_map_.lower_bound(values);
+
+      // If lb is not the first block, check the previous block for aliasing.
+      if (lb != observation_block_map_.begin()) {
+        ObservationMap::iterator previous = lb;
+        --previous;
+        CheckForNoAliasing(previous->first,
+                           previous->second->Size(),
+                           values,
+                           size);
+      }
+
+      // If lb is not off the end, check lb for aliasing.
+      if (lb != observation_block_map_.end()) {
+        CheckForNoAliasing(lb->first,
+                           lb->second->Size(),
+                           values,
+                           size);
+      }
+    }
+  }
+
+  // Pass the index of the new parameter block as well to keep the index in
+  // sync with the position of the parameter in the program's parameter vector.
+  ObservationBlock* new_observation_block =
+      new ObservationBlock(values, size, program_->observation_blocks_.size());
+
+  // For dynamic problems, add the list of dependent residual blocks, which is
+  // empty to start.
+  if (options_.enable_fast_removal) {
+    new_observation_block->EnableResidualBlockDependencies();
+  }
+  observation_block_map_[values] = new_observation_block;
+  program_->observation_blocks_.push_back(new_observation_block);
+  return new_observation_block;
+}
+
 void ProblemImpl::InternalRemoveResidualBlock(ResidualBlock* residual_block) {
   CHECK_NOTNULL(residual_block);
   // Perform no check on the validity of residual_block, that is handled in
@@ -155,6 +215,13 @@ void ProblemImpl::InternalRemoveResidualBlock(ResidualBlock* residual_block) {
         residual_block->NumParameterBlocks();
     for (int i = 0; i < num_parameter_blocks_for_residual; ++i) {
       residual_block->parameter_blocks()[i]
+          ->RemoveResidualBlock(residual_block);
+    }
+
+    const int num_observation_blocks_for_residual =
+        residual_block->NumObservationBlocks();
+    for (int i = 0; i < num_observation_blocks_for_residual; ++i) {
+      residual_block->observation_blocks()[i]
           ->RemoveResidualBlock(residual_block);
     }
 
@@ -174,9 +241,9 @@ void ProblemImpl::DeleteBlock(ResidualBlock* residual_block) {
   // pointers as const pointers but we have ownership of them and
   // have the right to destroy them when the destructor is called.
   if (options_.cost_function_ownership == TAKE_OWNERSHIP &&
-      residual_block->cost_function() != NULL) {
+      residual_block->relation_function() != NULL) {
     cost_functions_to_delete_.push_back(
-        const_cast<CostFunction*>(residual_block->cost_function()));
+        const_cast<RelationFunction*>(residual_block->relation_function()));
   }
   if (options_.loss_function_ownership == TAKE_OWNERSHIP &&
       residual_block->loss_function() != NULL) {
@@ -201,6 +268,16 @@ void ProblemImpl::DeleteBlock(ParameterBlock* parameter_block) {
   delete parameter_block;
 }
 
+void ProblemImpl::DeleteBlock(ObservationBlock* observation_block) {
+  if (options_.local_parameterization_ownership == TAKE_OWNERSHIP &&
+      observation_block->local_parameterization() != NULL) {
+    local_parameterizations_to_delete_.push_back(
+        observation_block->mutable_local_parameterization());
+  }
+  observation_block_map_.erase(observation_block->mutable_user_state());
+  delete observation_block;
+}
+
 ProblemImpl::ProblemImpl() : program_(new internal::Program) {}
 ProblemImpl::ProblemImpl(const Problem::Options& options)
     : options_(options),
@@ -218,6 +295,9 @@ ProblemImpl::~ProblemImpl() {
   // Collect the unique parameterizations and delete the parameters.
   for (int i = 0; i < program_->parameter_blocks_.size(); ++i) {
     DeleteBlock(program_->parameter_blocks_[i]);
+  }
+  for (int i = 0; i < program_->observation_blocks_.size(); ++i) {
+    DeleteBlock(program_->observation_blocks_[i]);
   }
 
   // Delete the owned cost/loss functions and parameterizations.
@@ -296,6 +376,135 @@ ResidualBlock* ProblemImpl::AddResidualBlock(
   if (options_.enable_fast_removal) {
     for (int i = 0; i < parameter_blocks.size(); ++i) {
       parameter_block_ptrs[i]->AddResidualBlock(new_residual_block);
+    }
+  }
+
+  program_->residual_blocks_.push_back(new_residual_block);
+
+  if (options_.enable_fast_removal) {
+    residual_block_set_.insert(new_residual_block);
+  }
+
+  return new_residual_block;
+}
+
+ResidualBlock* ProblemImpl::AddResidualBlock(
+    RelationFunction* relation_function,
+    LossFunction* loss_function,
+    const vector<double*>& parameter_blocks,
+    const vector<double*>& observation_blocks) {
+  CHECK_NOTNULL(relation_function);
+  CHECK_EQ(parameter_blocks.size(),
+           relation_function->parameter_block_sizes().size());
+  CHECK_EQ(observation_blocks.size(),
+           relation_function->observation_block_sizes().size());
+
+  // Check the sizes match.
+  const vector<int32>& parameter_block_sizes =
+      relation_function->parameter_block_sizes();
+
+  if (!options_.disable_all_safety_checks) {
+    CHECK_EQ(parameter_block_sizes.size(), parameter_blocks.size())
+        << "Number of blocks input is different than the number of blocks "
+        << "that the cost function expects.";
+
+    // Check for duplicate parameter blocks.
+    vector<double*> sorted_parameter_blocks(parameter_blocks);
+    sort(sorted_parameter_blocks.begin(), sorted_parameter_blocks.end());
+    const bool has_duplicate_items =
+        (std::adjacent_find(sorted_parameter_blocks.begin(),
+                            sorted_parameter_blocks.end())
+         != sorted_parameter_blocks.end());
+    if (has_duplicate_items) {
+      string blocks;
+      for (int i = 0; i < parameter_blocks.size(); ++i) {
+        blocks += StringPrintf(" %p ", parameter_blocks[i]);
+      }
+
+      LOG(FATAL) << "Duplicate parameter blocks in a residual parameter "
+                 << "are not allowed. Parameter block pointers: ["
+                 << blocks << "]";
+    }
+  }
+
+  const vector<int32>& observation_block_sizes =
+      relation_function->observation_block_sizes();
+
+  if (!options_.disable_all_safety_checks) {
+    CHECK_EQ(observation_block_sizes.size(), observation_blocks.size())
+        << "Number of blocks input is different than the number of blocks "
+        << "that the cost function expects.";
+
+    // Check for duplicate observation blocks.
+    vector<double*> sorted_observation_blocks(observation_blocks);
+    sort(sorted_observation_blocks.begin(), sorted_observation_blocks.end());
+    const bool has_duplicate_items =
+        (std::adjacent_find(sorted_observation_blocks.begin(),
+                            sorted_observation_blocks.end())
+         != sorted_observation_blocks.end());
+    if (has_duplicate_items) {
+      string blocks;
+      for (int i = 0; i < observation_blocks.size(); ++i) {
+        blocks += StringPrintf(" %p ", observation_blocks[i]);
+      }
+
+      LOG(FATAL) << "Duplicate observation blocks in a residual observation "
+                 << "are not allowed. observation block pointers: ["
+                 << blocks << "]";
+    }
+  }
+
+  // Add parameter blocks and convert the double*'s to parameter blocks.
+  vector<ParameterBlock*> parameter_block_ptrs(parameter_blocks.size());
+  for (int i = 0; i < parameter_blocks.size(); ++i) {
+    parameter_block_ptrs[i] =
+        InternalAddParameterBlock(parameter_blocks[i],
+                                  parameter_block_sizes[i]);
+  }
+
+  vector<ObservationBlock*> observation_block_ptrs(observation_blocks.size());
+  for (int i = 0; i < observation_blocks.size(); ++i) {
+    observation_block_ptrs[i] =
+        InternalAddObservationBlock(observation_blocks[i],
+                                  observation_block_sizes[i]);
+  }
+
+  if (!options_.disable_all_safety_checks) {
+    // Check that the block sizes match the block sizes expected by the
+    // cost_function.
+    for (int i = 0; i < parameter_block_ptrs.size(); ++i) {
+      CHECK_EQ(relation_function->parameter_block_sizes()[i],
+               parameter_block_ptrs[i]->Size())
+          << "The cost function expects parameter block " << i
+          << " of size " << relation_function->parameter_block_sizes()[i]
+          << " but was given a block of size "
+          << parameter_block_ptrs[i]->Size();
+    }
+
+    for (int i = 0; i < observation_block_ptrs.size(); ++i) {
+      CHECK_EQ(relation_function->observation_block_sizes()[i],
+               observation_block_ptrs[i]->Size())
+          << "The cost function expects observation block " << i
+          << " of size " << relation_function->observation_block_sizes()[i]
+          << " but was given a block of size "
+          << observation_block_ptrs[i]->Size();
+    }
+  }
+
+  ResidualBlock* new_residual_block =
+      new ResidualBlock(relation_function,
+                        loss_function,
+                        parameter_block_ptrs,
+                        observation_block_ptrs,
+                        program_->residual_blocks_.size());
+
+  // Add dependencies on the residual to the parameter blocks.
+  if (options_.enable_fast_removal) {
+    for (int i = 0; i < parameter_blocks.size(); ++i) {
+      parameter_block_ptrs[i]->AddResidualBlock(new_residual_block);
+    }
+    for (int i = 0; i < observation_blocks.size(); ++i) {
+      observation_block_ptrs[i]->AddResidualBlock(new_residual_block);
     }
   }
 
@@ -464,6 +673,21 @@ void ProblemImpl::AddParameterBlock(
   }
 }
 
+void ProblemImpl::AddObservationBlock(double* values, int size) {
+  InternalAddObservationBlock(values, size);
+}
+
+void ProblemImpl::AddObservationBlock(
+    double* values,
+    int size,
+    LocalParameterization* local_parameterization) {
+  ObservationBlock* observation_block =
+      InternalAddObservationBlock(values, size);
+  if (local_parameterization != NULL) {
+    observation_block->SetParameterization(local_parameterization);
+  }
+}
+
 // Delete a block from a vector of blocks, maintaining the indexing invariant.
 // This is done in constant time by moving an element from the end of the
 // vector over the element to remove, then popping the last element. It
@@ -492,6 +716,7 @@ void ProblemImpl::DeleteBlockInVector(vector<Block*>* mutable_blocks,
   mutable_blocks->pop_back();
 }
 
+// TODO: not sure
 void ProblemImpl::RemoveResidualBlock(ResidualBlock* residual_block) {
   CHECK_NOTNULL(residual_block);
 
@@ -523,6 +748,7 @@ void ProblemImpl::RemoveResidualBlock(ResidualBlock* residual_block) {
   InternalRemoveResidualBlock(residual_block);
 }
 
+// TODO: not sure
 void ProblemImpl::RemoveParameterBlock(double* values) {
   ParameterBlock* parameter_block =
       FindWithDefault(parameter_block_map_, values, NULL);
@@ -561,6 +787,45 @@ void ProblemImpl::RemoveParameterBlock(double* values) {
   DeleteBlockInVector(program_->mutable_parameter_blocks(), parameter_block);
 }
 
+// TODO: not sure
+void ProblemImpl::RemoveObservationBlock(double* values) {
+  ObservationBlock* observation_block =
+      FindWithDefault(observation_block_map_, values, NULL);
+  if (observation_block == NULL) {
+    LOG(FATAL) << "Observation block not found: " << values
+               << ". You must add the observation block to the problem before "
+               << "it can be removed.";
+  }
+
+  if (options_.enable_fast_removal) {
+    // Copy the dependent residuals from the parameter block because the set of
+    // dependents will change after each call to RemoveResidualBlock().
+    vector<ResidualBlock*> residual_blocks_to_remove(
+        observation_block->mutable_residual_blocks()->begin(),
+        observation_block->mutable_residual_blocks()->end());
+    for (int i = 0; i < residual_blocks_to_remove.size(); ++i) {
+      InternalRemoveResidualBlock(residual_blocks_to_remove[i]);
+    }
+  } else {
+    // Scan all the residual blocks to remove ones that depend on the parameter
+    // block. Do the scan backwards since the vector changes while iterating.
+    const int num_residual_blocks = NumResidualBlocks();
+    for (int i = num_residual_blocks - 1; i >= 0; --i) {
+      ResidualBlock* residual_block =
+          (*(program_->mutable_residual_blocks()))[i];
+      const int num_observation_blocks = residual_block->NumObservationBlocks();
+      for (int j = 0; j < num_observation_blocks; ++j) {
+        if (residual_block->observation_blocks()[j] == observation_block) {
+          InternalRemoveResidualBlock(residual_block);
+          // The observation blocks are guaranteed unique.
+          break;
+        }
+      }
+    }
+  }
+  DeleteBlockInVector(program_->mutable_observation_blocks(), observation_block);
+}
+
 void ProblemImpl::SetParameterBlockConstant(double* values) {
   ParameterBlock* parameter_block =
       FindWithDefault(parameter_block_map_, values, NULL);
@@ -595,31 +860,81 @@ void ProblemImpl::SetParameterBlockVariable(double* values) {
   parameter_block->SetVarying();
 }
 
+void ProblemImpl::SetObservationBlockConstant(double* values) {
+  ObservationBlock* observation_block =
+      FindWithDefault(observation_block_map_, values, NULL);
+  if (observation_block == NULL) {
+    LOG(FATAL) << "Observation block not found: " << values
+               << ". You must add the observation block to the problem before "
+               << "it can be set constant.";
+  }
+
+  observation_block->SetConstant();
+}
+
+bool ProblemImpl::IsObservationBlockConstant(double* values) const {
+  ObservationBlock* observation_block =
+      FindWithDefault(observation_block_map_, values, NULL);
+  CHECK(observation_block != NULL)
+    << "Observation block not found: " << values << ". You must add the "
+    << "Observation block to the problem before it can be queried.";
+
+  return observation_block->IsConstant();
+}
+
+void ProblemImpl::SetObservationBlockVariable(double* values) {
+  ObservationBlock* observation_block =
+      FindWithDefault(observation_block_map_, values, NULL);
+  if (observation_block == NULL) {
+    LOG(FATAL) << "Observation block not found: " << values
+               << ". You must add the parameter block to the problem before "
+               << "it can be set varying.";
+  }
+
+  observation_block->SetVarying();
+}
+
 void ProblemImpl::SetParameterization(
     double* values,
     LocalParameterization* local_parameterization) {
-  ParameterBlock* parameter_block =
-      FindWithDefault(parameter_block_map_, values, NULL);
-  if (parameter_block == NULL) {
-    LOG(FATAL) << "Parameter block not found: " << values
-               << ". You must add the parameter block to the problem before "
-               << "you can set its local parameterization.";
-  }
+    ParameterBlock* parameter_block =
+        FindWithDefault(parameter_block_map_, values, NULL);
 
-  parameter_block->SetParameterization(local_parameterization);
+    if (parameter_block != NULL) {
+        parameter_block->SetParameterization(local_parameterization);
+        return;
+    }
+
+    ObservationBlock* observation_block =
+        FindWithDefault(observation_block_map_, values, NULL);
+
+    if (observation_block != NULL) {
+        observation_block->SetParameterization(local_parameterization);
+        return;
+    }
+
+    LOG(FATAL) << "Parameter or Observation block not found: " << values
+               << ". You must add the block to the problem before "
+               << "you can set its local parameterization.";
 }
 
 const LocalParameterization* ProblemImpl::GetParameterization(
     double* values) const {
-  ParameterBlock* parameter_block =
-      FindWithDefault(parameter_block_map_, values, NULL);
-  if (parameter_block == NULL) {
+    ParameterBlock* parameter_block =
+        FindWithDefault(parameter_block_map_, values, NULL);
+    if (parameter_block != NULL) {
+        return parameter_block->local_parameterization();
+    }
+
+    ObservationBlock* observation_block =
+        FindWithDefault(observation_block_map_, values, NULL);
+    if (observation_block != NULL) {
+        return observation_block->local_parameterization();;
+    }
+
     LOG(FATAL) << "Parameter block not found: " << values
                << ". You must add the parameter block to the problem before "
                << "you can get its local parameterization.";
-  }
-
-  return parameter_block->local_parameterization();
 }
 
 void ProblemImpl::SetParameterLowerBound(double* values,
@@ -652,12 +967,14 @@ void ProblemImpl::SetParameterUpperBound(double* values,
 bool ProblemImpl::Evaluate(const Problem::EvaluateOptions& evaluate_options,
                            double* cost,
                            vector<double>* residuals,
-                           vector<double>* gradient,
-                           CRSMatrix* jacobian) {
+                           vector<double>* gradient_p,
+                           vector<double>* gradient_o,
+                           CRSMatrix* jacobian_p,
+                           CRSMatrix* jacobian_o) {
   if (cost == NULL &&
       residuals == NULL &&
-      gradient == NULL &&
-      jacobian == NULL) {
+      gradient_p == NULL && gradient_o == NULL &&
+      jacobian_p == NULL && jacobian_o == NULL) {
     LOG(INFO) << "Nothing to do.";
     return true;
   }
@@ -729,10 +1046,54 @@ bool ProblemImpl::Evaluate(const Problem::EvaluateOptions& evaluate_options,
       }
     }
   }
-
   // Setup the Parameter indices and offsets before an evaluator can
   // be constructed and used.
   program.SetParameterOffsetsAndIndex();
+
+  const vector<double*>& observation_block_ptrs =
+      evaluate_options.observation_blocks;
+  vector<ObservationBlock*> variable_observation_blocks;
+  vector<ObservationBlock*>& observation_blocks =
+      *program.mutable_observation_blocks();
+
+  if (observation_block_ptrs.size() == 0) {
+    observation_blocks = program_->observation_blocks();
+  } else {
+    observation_blocks.resize(observation_block_ptrs.size());
+    for (int i = 0; i < observation_block_ptrs.size(); ++i) {
+      observation_blocks[i] = FindWithDefault(observation_block_map_,
+                                            observation_block_ptrs[i],
+                                            NULL);
+      if (observation_blocks[i] == NULL) {
+        LOG(FATAL) << "No known observation block for "
+                   << "Problem::Evaluate::Options.observation_blocks[" << i << "]"
+                   << " = " << observation_block_ptrs[i];
+      }
+    }
+
+    vector<ObservationBlock*> all_observation_blocks(program_->observation_blocks());
+    vector<ObservationBlock*> included_observation_blocks(
+        program.observation_blocks());
+
+    vector<ObservationBlock*> excluded_observation_blocks;
+    sort(all_observation_blocks.begin(), all_observation_blocks.end());
+    sort(included_observation_blocks.begin(), included_observation_blocks.end());
+    set_difference(all_observation_blocks.begin(),
+                   all_observation_blocks.end(),
+                   included_observation_blocks.begin(),
+                   included_observation_blocks.end(),
+                   back_inserter(excluded_observation_blocks));
+
+    variable_observation_blocks.reserve(excluded_observation_blocks.size());
+    for (int i = 0; i < excluded_observation_blocks.size(); ++i) {
+      ObservationBlock* observation_block = excluded_observation_blocks[i];
+      if (!observation_block->IsConstant()) {
+        variable_observation_blocks.push_back(observation_block);
+        observation_block->SetConstant();
+      }
+    }
+  }
+  program.SetObservationOffsetsAndIndex();
 
   Evaluator::Options evaluator_options;
 
@@ -765,9 +1126,15 @@ bool ProblemImpl::Evaluate(const Problem::EvaluateOptions& evaluate_options,
     for (int i = 0; i < variable_parameter_blocks.size(); ++i) {
       variable_parameter_blocks[i]->SetVarying();
     }
-
     program_->SetParameterBlockStatePtrsToUserStatePtrs();
     program_->SetParameterOffsetsAndIndex();
+
+    for (int i = 0; i < variable_observation_blocks.size(); ++i) {
+      variable_observation_blocks[i]->SetVarying();
+    }
+    program_->SetObservationBlockStatePtrsToUserStatePtrs();
+    program_->SetObservationOffsetsAndIndex();
+
     return false;
   }
 
@@ -775,20 +1142,30 @@ bool ProblemImpl::Evaluate(const Problem::EvaluateOptions& evaluate_options,
     residuals->resize(evaluator->NumResiduals());
   }
 
-  if (gradient != NULL) {
-    gradient->resize(evaluator->NumEffectiveParameters());
+  if (gradient_p != NULL) {
+    gradient_p->resize(evaluator->NumEffectiveParameters());
+  }
+  if (gradient_o != NULL) {
+    gradient_o->resize(evaluator->NumEffectiveObservations());
   }
 
-  scoped_ptr<CompressedRowSparseMatrix> tmp_jacobian;
-  if (jacobian != NULL) {
-    tmp_jacobian.reset(
-        down_cast<CompressedRowSparseMatrix*>(evaluator->CreateJacobian()));
+  scoped_ptr<CompressedRowSparseMatrix> tmp_jacobian_p;
+  if (jacobian_p != NULL) {
+    tmp_jacobian_p.reset(
+        down_cast<CompressedRowSparseMatrix*>(evaluator->CreateJacobian_p()));
+  }
+
+  scoped_ptr<CompressedRowSparseMatrix> tmp_jacobian_o;
+  if (jacobian_o != NULL) {
+    tmp_jacobian_o.reset(
+        down_cast<CompressedRowSparseMatrix*>(evaluator->CreateJacobian_o()));
   }
 
   // Point the state pointers to the user state pointers. This is
   // needed so that we can extract a parameter vector which is then
   // passed to Evaluator::Evaluate.
   program.SetParameterBlockStatePtrsToUserStatePtrs();
+  program.SetObservationBlockStatePtrsToUserStatePtrs();
 
   // Copy the value of the parameter blocks into a vector, since the
   // Evaluate::Evaluate method needs its input as such. The previous
@@ -798,6 +1175,8 @@ bool ProblemImpl::Evaluate(const Problem::EvaluateOptions& evaluate_options,
   // used for evaluation.
   Vector parameters(program.NumParameters());
   program.ParameterBlocksToStateVector(parameters.data());
+  Vector observations(program.NumObservations());
+  program.ObservationBlocksToStateVector(observations.data());
 
   double tmp_cost = 0;
 
@@ -805,11 +1184,12 @@ bool ProblemImpl::Evaluate(const Problem::EvaluateOptions& evaluate_options,
   evaluator_evaluate_options.apply_loss_function =
       evaluate_options.apply_loss_function;
   bool status = evaluator->Evaluate(evaluator_evaluate_options,
-                                    parameters.data(),
+                                    parameters.data(),observations.data(),
                                     &tmp_cost,
                                     residuals != NULL ? &(*residuals)[0] : NULL,
-                                    gradient != NULL ? &(*gradient)[0] : NULL,
-                                    tmp_jacobian.get());
+                                    gradient_p != NULL ? &(*gradient_p)[0] : NULL,
+                                    gradient_o != NULL ? &(*gradient_o)[0] : NULL,
+                                    tmp_jacobian_p.get(),tmp_jacobian_o.get());
 
   // Make the parameter blocks that were temporarily marked constant,
   // variable again.
@@ -817,17 +1197,26 @@ bool ProblemImpl::Evaluate(const Problem::EvaluateOptions& evaluate_options,
     variable_parameter_blocks[i]->SetVarying();
   }
 
+  for (int i = 0; i < variable_observation_blocks.size(); ++i) {
+    variable_observation_blocks[i]->SetVarying();
+  }
+
   if (status) {
     if (cost != NULL) {
       *cost = tmp_cost;
     }
-    if (jacobian != NULL) {
-      tmp_jacobian->ToCRSMatrix(jacobian);
+    if (jacobian_p != NULL) {
+      tmp_jacobian_p->ToCRSMatrix(jacobian_p);
+    }
+    if (jacobian_o != NULL) {
+      tmp_jacobian_o->ToCRSMatrix(jacobian_o);
     }
   }
 
   program_->SetParameterBlockStatePtrsToUserStatePtrs();
   program_->SetParameterOffsetsAndIndex();
+  program_->SetObservationBlockStatePtrsToUserStatePtrs();
+  program_->SetObservationOffsetsAndIndex();
   return status;
 }
 
@@ -837,6 +1226,14 @@ int ProblemImpl::NumParameterBlocks() const {
 
 int ProblemImpl::NumParameters() const {
   return program_->NumParameters();
+}
+
+int ProblemImpl::NumObservationBlocks() const {
+  return program_->NumObservationBlocks();
+}
+
+int ProblemImpl::NumObservations() const {
+  return program_->NumObservations();
 }
 
 int ProblemImpl::NumResidualBlocks() const {
@@ -886,6 +1283,46 @@ void ProblemImpl::GetParameterBlocks(vector<double*>* parameter_blocks) const {
   }
 }
 
+int ProblemImpl::ObservationBlockSize(const double* values) const {
+  ObservationBlock* observation_block =
+      FindWithDefault(observation_block_map_, const_cast<double*>(values), NULL);
+  if (observation_block == NULL) {
+    LOG(FATAL) << "Observation block not found: " << values
+               << ". You must add the Observation block to the problem before "
+               << "you can get its size.";
+  }
+
+  return observation_block->Size();
+}
+
+int ProblemImpl::ObservationBlockLocalSize(const double* values) const {
+  ObservationBlock* observation_block =
+      FindWithDefault(observation_block_map_, const_cast<double*>(values), NULL);
+  if (observation_block == NULL) {
+    LOG(FATAL) << "Observation block not found: " << values
+               << ". You must add the observation block to the problem before "
+               << "you can get its local size.";
+  }
+
+  return observation_block->LocalSize();
+}
+
+bool ProblemImpl::HasObservationBlock(const double* observation_block) const {
+  return (observation_block_map_.find(const_cast<double*>(observation_block)) !=
+          observation_block_map_.end());
+}
+
+
+void ProblemImpl::GetObservationBlocks(vector<double*>* observation_blocks) const {
+  CHECK_NOTNULL(observation_blocks);
+  observation_blocks->resize(0);
+  for (ObservationMap::const_iterator it = observation_block_map_.begin();
+       it != observation_block_map_.end();
+       ++it) {
+    observation_blocks->push_back(it->first);
+  }
+}
+
 void ProblemImpl::GetResidualBlocks(
     vector<ResidualBlockId>* residual_blocks) const {
   CHECK_NOTNULL(residual_blocks);
@@ -903,9 +1340,25 @@ void ProblemImpl::GetParameterBlocksForResidualBlock(
   }
 }
 
+void ProblemImpl::GetObservationBlocksForResidualBlock(
+    const ResidualBlockId residual_block,
+    vector<double*>* observation_blocks) const {
+  int num_observation_blocks = residual_block->NumObservationBlocks();
+  CHECK_NOTNULL(observation_blocks)->resize(num_observation_blocks);
+  for (int i = 0; i < num_observation_blocks; ++i) {
+    (*observation_blocks)[i] =
+        residual_block->observation_blocks()[i]->mutable_user_state();
+  }
+}
+
 const CostFunction* ProblemImpl::GetCostFunctionForResidualBlock(
     const ResidualBlockId residual_block) const {
   return residual_block->cost_function();
+}
+
+const RelationFunction* ProblemImpl::GetRelationFunctionForResidualBlock(
+    const ResidualBlockId residual_block) const {
+  return residual_block->relation_function();
 }
 
 const LossFunction* ProblemImpl::GetLossFunctionForResidualBlock(
@@ -952,5 +1405,43 @@ void ProblemImpl::GetResidualBlocksForParameterBlock(
   }
 }
 
+void ProblemImpl::GetResidualBlocksForObservationBlock(
+    const double* values,
+    vector<ResidualBlockId>* residual_blocks) const {
+  ObservationBlock* observation_block =
+      FindWithDefault(observation_block_map_, const_cast<double*>(values), NULL);
+  if (observation_block == NULL) {
+    LOG(FATAL) << "Observation block not found: " << values
+               << ". You must add the Observation block to the problem before "
+               << "you can get the residual blocks that depend on it.";
+  }
+
+  if (options_.enable_fast_removal) {
+    // In this case the residual blocks that depend on the Observation block are
+    // stored in the Observation block already, so just copy them out.
+    CHECK_NOTNULL(residual_blocks)->resize(
+        observation_block->mutable_residual_blocks()->size());
+    std::copy(observation_block->mutable_residual_blocks()->begin(),
+              observation_block->mutable_residual_blocks()->end(),
+              residual_blocks->begin());
+    return;
+  }
+
+  // Find residual blocks that depend on the Observation block.
+  CHECK_NOTNULL(residual_blocks)->clear();
+  const int num_residual_blocks = NumResidualBlocks();
+  for (int i = 0; i < num_residual_blocks; ++i) {
+    ResidualBlock* residual_block =
+        (*(program_->mutable_residual_blocks()))[i];
+    const int num_observation_blocks = residual_block->NumObservationBlocks();
+    for (int j = 0; j < num_observation_blocks; ++j) {
+      if (residual_block->observation_blocks()[j] == observation_block) {
+        residual_blocks->push_back(residual_block);
+        // The Observation blocks are guaranteed unique.
+        break;
+      }
+    }
+  }
+}
 }  // namespace internal
 }  // namespace ceres

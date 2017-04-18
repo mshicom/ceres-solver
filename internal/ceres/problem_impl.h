@@ -64,6 +64,8 @@ class ResidualBlock;
 class ProblemImpl {
  public:
   typedef std::map<double*, ParameterBlock*> ParameterMap;
+  typedef std::map<double*, ObservationBlock*> ObservationMap;
+
   typedef HashSet<ResidualBlock*> ResidualBlockSet;
 
   ProblemImpl();
@@ -76,6 +78,13 @@ class ProblemImpl {
       CostFunction* cost_function,
       LossFunction* loss_function,
       const std::vector<double*>& parameter_blocks);
+
+  ResidualBlock* AddResidualBlock(
+      RelationFunction* constraint_function,
+      LossFunction* loss_function,
+      const std::vector<double*>& parameter_blocks,
+      const std::vector<double*>& observation_blocks);
+
   ResidualBlockId AddResidualBlock(CostFunction* cost_function,
                                    LossFunction* loss_function,
                                    double* x0);
@@ -122,13 +131,22 @@ class ProblemImpl {
   void AddParameterBlock(double* values,
                          int size,
                          LocalParameterization* local_parameterization);
+  void AddObservationBlock(double* values, int size);
+  void AddObservationBlock(double* values,
+                         int size,
+                         LocalParameterization* local_parameterization);
 
   void RemoveResidualBlock(ResidualBlock* residual_block);
   void RemoveParameterBlock(double* values);
+  void RemoveObservationBlock(double* values);
 
   void SetParameterBlockConstant(double* values);
   void SetParameterBlockVariable(double* values);
   bool IsParameterBlockConstant(double* values) const;
+
+  void SetObservationBlockConstant(double* values);
+  void SetObservationBlockVariable(double* values);
+  bool IsObservationBlockConstant(double* values) const;
 
   void SetParameterization(double* values,
                            LocalParameterization* local_parameterization);
@@ -136,43 +154,73 @@ class ProblemImpl {
 
   void SetParameterLowerBound(double* values, int index, double lower_bound);
   void SetParameterUpperBound(double* values, int index, double upper_bound);
+  void SetObservationLowerBound(double* values, int index, double lower_bound);
+  void SetObservationUpperBound(double* values, int index, double upper_bound);
 
   bool Evaluate(const Problem::EvaluateOptions& options,
                 double* cost,
                 std::vector<double>* residuals,
+                std::vector<double>* gradient_p,
                 std::vector<double>* gradient,
-                CRSMatrix* jacobian);
+                CRSMatrix* jacobian_p,
+                CRSMatrix* jacobian_o);
+
+  bool Evaluate(const Problem::EvaluateOptions& options,
+                double* cost,
+                std::vector<double>* residuals,
+                std::vector<double>* gradient_p,
+                CRSMatrix* jacobian_p) {
+      return Evaluate(options, cost, residuals, gradient_p, NULL, jacobian_p, NULL);
+  }
+
 
   int NumParameterBlocks() const;
   int NumParameters() const;
+  int NumObservationBlocks() const;
+  int NumObservations() const;
   int NumResidualBlocks() const;
   int NumResiduals() const;
 
   int ParameterBlockSize(const double* parameter_block) const;
   int ParameterBlockLocalSize(const double* parameter_block) const;
-
   bool HasParameterBlock(const double* parameter_block) const;
 
+  int ObservationBlockSize(const double* observation_block) const;
+  int ObservationBlockLocalSize(const double* observation_block) const;
+  bool HasObservationBlock(const double* observation_block) const;
+
   void GetParameterBlocks(std::vector<double*>* parameter_blocks) const;
+  void GetObservationBlocks(std::vector<double*>* observation_blocks) const;
   void GetResidualBlocks(std::vector<ResidualBlockId>* residual_blocks) const;
 
   void GetParameterBlocksForResidualBlock(
       const ResidualBlockId residual_block,
       std::vector<double*>* parameter_blocks) const;
+  void GetObservationBlocksForResidualBlock(
+      const ResidualBlockId residual_block,
+      std::vector<double*>* observation_blocks) const;
 
   const CostFunction* GetCostFunctionForResidualBlock(
       const ResidualBlockId residual_block) const;
+  const RelationFunction* GetRelationFunctionForResidualBlock(
+      const ResidualBlockId residual_block) const;
+
   const LossFunction* GetLossFunctionForResidualBlock(
       const ResidualBlockId residual_block) const;
 
   void GetResidualBlocksForParameterBlock(
       const double* values,
       std::vector<ResidualBlockId>* residual_blocks) const;
+  void GetResidualBlocksForObservationBlock(
+      const double* values,
+      std::vector<ResidualBlockId>* constraint_block) const;
 
   const Program& program() const { return *program_; }
   Program* mutable_program() { return program_.get(); }
 
   const ParameterMap& parameter_map() const { return parameter_block_map_; }
+  const ObservationMap& observation_map() const { return observation_block_map_; }
+
   const ResidualBlockSet& residual_block_set() const {
     CHECK(options_.enable_fast_removal)
         << "Fast removal not enabled, residual_block_set is not maintained.";
@@ -181,13 +229,17 @@ class ProblemImpl {
 
  private:
   ParameterBlock* InternalAddParameterBlock(double* values, int size);
+  ObservationBlock* InternalAddObservationBlock(double* values, int size);
+
   void InternalRemoveResidualBlock(ResidualBlock* residual_block);
 
   bool InternalEvaluate(Program* program,
                         double* cost,
                         std::vector<double>* residuals,
-                        std::vector<double>* gradient,
-                        CRSMatrix* jacobian);
+                        std::vector<double>* gradient_p,
+                        std::vector<double>* gradient_o,
+                        CRSMatrix* jacobian_p,
+                        CRSMatrix* jacobian_o);
 
   // Delete the arguments in question. These differ from the Remove* functions
   // in that they do not clean up references to the block to delete; they
@@ -197,11 +249,13 @@ class ProblemImpl {
                            Block* block_to_remove);
   void DeleteBlock(ResidualBlock* residual_block);
   void DeleteBlock(ParameterBlock* parameter_block);
+  void DeleteBlock(ObservationBlock* observation_block);
 
   const Problem::Options options_;
 
   // The mapping from user pointers to parameter blocks.
   std::map<double*, ParameterBlock*> parameter_block_map_;
+  std::map<double*, ObservationBlock*> observation_block_map_;
 
   // Iff enable_fast_removal is enabled, contains the current residual blocks.
   ResidualBlockSet residual_block_set_;
@@ -215,7 +269,7 @@ class ProblemImpl {
   // residual or parameter blocks, buffer them until destruction.
   //
   // TODO(keir): See if it makes sense to use sets instead.
-  std::vector<CostFunction*> cost_functions_to_delete_;
+  std::vector<RelationFunction*> cost_functions_to_delete_;
   std::vector<LossFunction*> loss_functions_to_delete_;
   std::vector<LocalParameterization*> local_parameterizations_to_delete_;
 

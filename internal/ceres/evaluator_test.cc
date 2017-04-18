@@ -155,7 +155,7 @@ struct EvaluatorTest
     Vector gradient(num_parameters);
     gradient.setConstant(-3000);
 
-    scoped_ptr<SparseMatrix> jacobian(evaluator->CreateJacobian());
+    scoped_ptr<SparseMatrix> jacobian(evaluator->CreateJacobian_p());
 
     ASSERT_EQ(expected_num_rows, evaluator->NumResiduals());
     ASSERT_EQ(expected_num_cols, evaluator->NumEffectiveParameters());
@@ -531,7 +531,7 @@ TEST_P(EvaluatorTest, EvaluatorAbortsForResidualsThatFailToEvaluate) {
   double state[9];
 
   scoped_ptr<Evaluator> evaluator(CreateEvaluator(problem.mutable_program()));
-  scoped_ptr<SparseMatrix> jacobian(evaluator->CreateJacobian());
+  scoped_ptr<SparseMatrix> jacobian(evaluator->CreateJacobian_p());
   double cost;
   EXPECT_FALSE(evaluator->Evaluate(state, &cost, NULL, NULL, NULL));
 }
@@ -606,7 +606,7 @@ TEST(Evaluator, EvaluatorRespectsParameterChanges) {
   options.num_eliminate_blocks = 0;
   string error;
   scoped_ptr<Evaluator> evaluator(Evaluator::Create(options, program, &error));
-  scoped_ptr<SparseMatrix> jacobian(evaluator->CreateJacobian());
+  scoped_ptr<SparseMatrix> jacobian(evaluator->CreateJacobian_p());
 
   ASSERT_EQ(2, jacobian->num_rows());
   ASSERT_EQ(2, jacobian->num_cols());

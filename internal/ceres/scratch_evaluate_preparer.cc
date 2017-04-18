@@ -50,29 +50,48 @@ ScratchEvaluatePreparer* ScratchEvaluatePreparer::Create(
 }
 
 void ScratchEvaluatePreparer::Init(int max_derivatives_per_residual_block) {
-  jacobian_scratch_.reset(
+  jacobian_p_scratch_.reset(
+      new double[max_derivatives_per_residual_block]);
+  jacobian_o_scratch_.reset(
       new double[max_derivatives_per_residual_block]);
 }
 
 // Point the jacobian blocks into the scratch area of this evaluate preparer.
-void ScratchEvaluatePreparer::Prepare(const ResidualBlock* residual_block,
+void ScratchEvaluatePreparer::Prepare_p(const ResidualBlock* residual_block,
                                       int /* residual_block_index */,
-                                      SparseMatrix* /* jacobian */,
-                                      double** jacobians) {
-  double* jacobian_block_cursor = jacobian_scratch_.get();
+                                      SparseMatrix* /* jacobian_p */,
+                                      double** jacobians_p) {
+  double* jacobian_block_cursor = jacobian_p_scratch_.get();
   int num_residuals = residual_block->NumResiduals();
   int num_parameter_blocks = residual_block->NumParameterBlocks();
   for (int j = 0; j < num_parameter_blocks; ++j) {
     const ParameterBlock* parameter_block =
         residual_block->parameter_blocks()[j];
     if (parameter_block->IsConstant()) {
-      jacobians[j] = NULL;
+      jacobians_p[j] = NULL;
     } else {
-      jacobians[j] = jacobian_block_cursor;
+      jacobians_p[j] = jacobian_block_cursor;
       jacobian_block_cursor += num_residuals * parameter_block->LocalSize();
     }
   }
 }
-
+void ScratchEvaluatePreparer::Prepare_o(const ResidualBlock* residual_block,
+                                        int /* residual_block_index */,
+                                        SparseMatrix* /* jacobian_o */,
+                                        double** jacobians_o) {
+  double* jacobian_block_cursor = jacobian_o_scratch_.get();
+  int num_residuals = residual_block->NumResiduals();
+  int num_observation_blocks = residual_block->NumObservationBlocks();
+  for (int j = 0; j < num_observation_blocks; ++j) {
+    const ObservationBlock* observation_block =
+        residual_block->observation_blocks()[j];
+    if (observation_block->IsConstant()) {
+      jacobians_o[j] = NULL;
+    } else {
+      jacobians_o[j] = jacobian_block_cursor;
+      jacobian_block_cursor += num_residuals * observation_block->LocalSize();
+    }
+  }
+}
 }  // namespace internal
 }  // namespace ceres

@@ -60,13 +60,19 @@ class DenseJacobianWriter {
     return ScratchEvaluatePreparer::Create(*program_, num_threads);
   }
 
-  SparseMatrix* CreateJacobian() const {
+  SparseMatrix* CreateJacobian_p() const {
     return new DenseSparseMatrix(program_->NumResiduals(),
                                  program_->NumEffectiveParameters(),
                                  true);
   }
 
-  void Write(int residual_id,
+  SparseMatrix* CreateJacobian_o() const {
+    return new DenseSparseMatrix(program_->NumResiduals(),
+                                 program_->NumEffectiveObservations(),
+                                 true);
+  }
+
+  void Write_p(int residual_id,
              int residual_offset,
              double **jacobians,
              SparseMatrix* jacobian) {
@@ -97,7 +103,37 @@ class DenseJacobianWriter {
           parameter_block_size) = parameter_jacobian;
     }
   }
+  void Write_o(int residual_id,
+             int residual_offset,
+             double **jacobians,
+             SparseMatrix* jacobian) {
+    DenseSparseMatrix* dense_jacobian = down_cast<DenseSparseMatrix*>(jacobian);
+    const ResidualBlock* residual_block =
+        program_->residual_blocks()[residual_id];
+    int num_observation_blocks = residual_block->NumObservationBlocks();
+    int num_residuals = residual_block->NumResiduals();
 
+    // Now copy the jacobians for each observation into the dense jacobian matrix.
+    for (int j = 0; j < num_observation_blocks; ++j) {
+      ObservationBlock* observation_block = residual_block->observation_blocks()[j];
+
+      // If the observation block is fixed, then there is nothing to do.
+      if (observation_block->IsConstant()) {
+        continue;
+      }
+
+      const int observation_block_size = observation_block->LocalSize();
+      ConstMatrixRef observation_jacobian(jacobians[j],
+                                        num_residuals,
+                                        observation_block_size);
+
+      dense_jacobian->mutable_matrix().block(
+          residual_offset,
+          observation_block->delta_offset(),
+          num_residuals,
+          observation_block_size) = observation_jacobian;
+    }
+  }
  private:
   Program* program_;
 };

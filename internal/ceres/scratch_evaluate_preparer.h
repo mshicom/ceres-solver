@@ -52,15 +52,21 @@ class ScratchEvaluatePreparer {
 
   // EvaluatePreparer interface
   void Init(int max_derivatives_per_residual_block);
-  void Prepare(const ResidualBlock* residual_block,
+  void Prepare_p(const ResidualBlock* residual_block,
                int residual_block_index,
-               SparseMatrix* jacobian,
-               double** jacobians);
+               SparseMatrix* jacobian_p,
+               double** jacobians_p);
+
+  void Prepare_o(const ResidualBlock* residual_block,
+               int residual_block_index,
+               SparseMatrix* jacobian_o,
+               double** jacobians_o);
 
  private:
   // Scratch space for the jacobians; each jacobian is packed one after another.
   // There is enough scratch to hold all the jacobians for the largest residual.
-  scoped_array<double> jacobian_scratch_;
+  scoped_array<double> jacobian_p_scratch_;
+  scoped_array<double> jacobian_o_scratch_;
 };
 
 }  // namespace internal

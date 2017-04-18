@@ -121,6 +121,53 @@ void BuildJacobianLayout(const Program& program,
   }
 }
 
+void BuildJacobianLayoutNoEliminate(const Program& program,
+                         vector<int*>* jacobian_layout,
+                         vector<int>* jacobian_layout_storage) {
+  const vector<ResidualBlock*>& residual_blocks = program.residual_blocks();
+
+  int num_jacobian_blocks = 0;
+  for (int i = 0; i < residual_blocks.size(); ++i) {
+    ResidualBlock* constraint_block = residual_blocks[i];
+    const int num_residuals = constraint_block->NumResiduals();
+    const int num_observation_blocks = constraint_block->NumObservationBlocks();
+
+    // Advance f_block_pos over each E block for this residual.
+    for (int j = 0; j < num_observation_blocks; ++j) {
+      ObservationBlock* observation_block = constraint_block->observation_blocks()[j];
+      if (!observation_block->IsConstant()) {
+        // Only count blocks for active observations.
+        num_jacobian_blocks++;
+      }
+    }
+  }
+
+  jacobian_layout->resize(program.NumResidualBlocks());
+  jacobian_layout_storage->resize(num_jacobian_blocks);
+
+  int block_pos = 0;
+  int* jacobian_pos = &(*jacobian_layout_storage)[0];
+  for (int i = 0; i < residual_blocks.size(); ++i) {
+    const ResidualBlock* constraint_block = residual_blocks[i];
+    const int num_residuals = constraint_block->NumResiduals();
+    const int num_observation_blocks = constraint_block->NumObservationBlocks();
+
+    (*jacobian_layout)[i] = jacobian_pos;
+    for (int j = 0; j < num_observation_blocks; ++j) {
+      ObservationBlock* observation_block = constraint_block->observation_blocks()[j];
+      const int observation_block_index = observation_block->index();
+      if (observation_block->IsConstant()) {
+        continue;
+      }
+      const int jacobian_block_size =
+          num_residuals * observation_block->LocalSize();
+
+      *jacobian_pos++ = block_pos;
+      block_pos += jacobian_block_size;
+    }
+  }
+}
+
 }  // namespace
 
 BlockJacobianWriter::BlockJacobianWriter(const Evaluator::Options& options,
@@ -131,8 +178,12 @@ BlockJacobianWriter::BlockJacobianWriter(const Evaluator::Options& options,
 
   BuildJacobianLayout(*program,
                       options.num_eliminate_blocks,
-                      &jacobian_layout_,
-                      &jacobian_layout_storage_);
+                      &jacobian_layout_p_,
+                      &jacobian_layout_storage_p_);
+
+  BuildJacobianLayoutNoEliminate(*program,
+                      &jacobian_layout_o_,
+                      &jacobian_layout_storage_o_);
 }
 
 // Create evaluate prepareres that point directly into the final jacobian. This
@@ -144,12 +195,14 @@ BlockEvaluatePreparer* BlockJacobianWriter::CreateEvaluatePreparers(
 
   BlockEvaluatePreparer* preparers = new BlockEvaluatePreparer[num_threads];
   for (int i = 0; i < num_threads; i++) {
-    preparers[i].Init(&jacobian_layout_[0], max_derivatives_per_residual_block);
+      preparers[i].Init(&jacobian_layout_p_[0],
+                        &jacobian_layout_o_[0],
+                        max_derivatives_per_residual_block );
   }
   return preparers;
 }
 
-SparseMatrix* BlockJacobianWriter::CreateJacobian() const {
+SparseMatrix* BlockJacobianWriter::CreateJacobian_p() const {
   CompressedRowBlockStructure* bs = new CompressedRowBlockStructure;
 
   const vector<ParameterBlock*>& parameter_blocks =
@@ -194,10 +247,71 @@ SparseMatrix* BlockJacobianWriter::CreateJacobian() const {
       if (!parameter_block->IsConstant()) {
         Cell& cell = row->cells[k];
         cell.block_id = parameter_block->index();
-        cell.position = jacobian_layout_[i][k];
+        cell.position = jacobian_layout_p_[i][k];
 
         // Only increment k for active parameters, since there is only layout
         // information for active parameters.
+        k++;
+      }
+    }
+
+    sort(row->cells.begin(), row->cells.end(), CellLessThan);
+  }
+
+  BlockSparseMatrix* jacobian = new BlockSparseMatrix(bs);
+  CHECK_NOTNULL(jacobian);
+  return jacobian;
+}
+
+SparseMatrix* BlockJacobianWriter::CreateJacobian_o() const {
+  CompressedRowBlockStructure* bs = new CompressedRowBlockStructure;
+
+  const vector<ObservationBlock*>& observation_blocks =
+      program_->observation_blocks();
+
+  // Construct the column blocks.
+  bs->cols.resize(observation_blocks.size());
+  for (int i = 0, cursor = 0; i < observation_blocks.size(); ++i) {
+    CHECK_NE(observation_blocks[i]->index(), -1);
+    CHECK(!observation_blocks[i]->IsConstant());
+    bs->cols[i].size = observation_blocks[i]->LocalSize();
+    bs->cols[i].position = cursor;
+    cursor += bs->cols[i].size;
+  }
+
+  // Construct the cells in each row.
+  const vector<ResidualBlock*>& residual_blocks = program_->residual_blocks();
+  int row_block_position = 0;
+  bs->rows.resize(residual_blocks.size());
+  for (int i = 0; i < residual_blocks.size(); ++i) {
+    const ResidualBlock* residual_block = residual_blocks[i];
+    CompressedRow* row = &bs->rows[i];
+
+    row->block.size = residual_block->NumResiduals();
+    row->block.position = row_block_position;
+    row_block_position += row->block.size;
+
+    // Size the row by the number of active observations in this residual.
+    const int num_observation_blocks = residual_block->NumObservationBlocks();
+    int num_active_observation_blocks = 0;
+    for (int j = 0; j < num_observation_blocks; ++j) {
+      if (residual_block->observation_blocks()[j]->index() != -1) {
+        num_active_observation_blocks++;
+      }
+    }
+    row->cells.resize(num_active_observation_blocks);
+
+    // Add layout information for the active observations in this row.
+    for (int j = 0, k = 0; j < num_observation_blocks; ++j) {
+      const ObservationBlock* observation_block =
+          residual_block->observation_blocks()[j];
+      if (!observation_block->IsConstant()) {
+        Cell& cell = row->cells[k];
+        cell.block_id = observation_block->index();
+        cell.position = jacobian_layout_o_[i][k];
+
+        // Only increment k for active observations, since there is only layout
+        // information for active observations.
         k++;
       }
     }

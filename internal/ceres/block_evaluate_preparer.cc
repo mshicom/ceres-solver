@@ -40,44 +40,77 @@
 namespace ceres {
 namespace internal {
 
-void BlockEvaluatePreparer::Init(int const* const* jacobian_layout,
+void BlockEvaluatePreparer::Init(int const* const* jacobian_layout_p,
+                                 const int * const *jacobian_layout_o,
                                  int max_derivatives_per_residual_block) {
-  jacobian_layout_ = jacobian_layout;
+  jacobian_layout_p_ = jacobian_layout_p;
+  jacobian_layout_o_ = jacobian_layout_o;
   scratch_evaluate_preparer_.Init(max_derivatives_per_residual_block);
 }
 
 // Point the jacobian blocks directly into the block sparse matrix.
-void BlockEvaluatePreparer::Prepare(const ResidualBlock* residual_block,
+void BlockEvaluatePreparer::Prepare_p(const ResidualBlock* residual_block,
                                     int residual_block_index,
-                                    SparseMatrix* jacobian,
-                                    double** jacobians) {
+                                    SparseMatrix* jacobian_p,
+                                    double** jacobians_p) {
   // If the overall jacobian is not available, use the scratch space.
-  if (jacobian == NULL) {
-    scratch_evaluate_preparer_.Prepare(residual_block,
+  if (jacobian_p == NULL) {
+    scratch_evaluate_preparer_.Prepare_p(residual_block,
                                        residual_block_index,
-                                       jacobian,
-                                       jacobians);
+                                       jacobian_p,
+                                       jacobians_p);
     return;
   }
 
   double* jacobian_values =
-      down_cast<BlockSparseMatrix*>(jacobian)->mutable_values();
+      down_cast<BlockSparseMatrix*>(jacobian_p)->mutable_values();
 
-  const int* jacobian_block_offset = jacobian_layout_[residual_block_index];
+  const int* jacobian_block_offset = jacobian_layout_p_[residual_block_index];
   const int num_parameter_blocks = residual_block->NumParameterBlocks();
   for (int j = 0; j < num_parameter_blocks; ++j) {
     if (!residual_block->parameter_blocks()[j]->IsConstant()) {
-      jacobians[j] = jacobian_values + *jacobian_block_offset;
+      jacobians_p[j] = jacobian_values + *jacobian_block_offset;
 
       // The jacobian_block_offset can't be indexed with 'j' since the code
       // that creates the layout strips out any blocks for inactive
       // parameters. Instead, bump the pointer for active parameters only.
       jacobian_block_offset++;
     } else {
-      jacobians[j] = NULL;
+      jacobians_p[j] = NULL;
     }
   }
 }
 
-}  // namespace internal
+void BlockEvaluatePreparer::Prepare_o(const ResidualBlock* residual_block,
+                                          int constraint_block_index,
+                                          SparseMatrix* jacobian_o,
+                                          double** jacobians_o) {
+    // If the overall jacobian is not available, use the scratch space.
+    if (jacobian_o == NULL) {
+      scratch_evaluate_preparer_.Prepare_o(residual_block,
+                                         constraint_block_index,
+                                         jacobian_o,
+                                         jacobians_o);
+      return;
+    }
+
+    double* jacobian_values =
+        down_cast<BlockSparseMatrix*>(jacobian_o)->mutable_values();
+
+    const int* jacobian_block_offset = jacobian_layout_o_[constraint_block_index];
+    const int num_observation_blocks = residual_block->NumObservationBlocks();
+    for (int j = 0; j < num_observation_blocks; ++j) {
+      if (!residual_block->observation_blocks()[j]->IsConstant()) {
+        jacobians_o[j] = jacobian_values + *jacobian_block_offset;
+
+        // The jacobian_block_offset can't be indexed with 'j' since the code
+        // that creates the layout strips out any blocks for inactive
+        // observations. Instead, bump the pointer for active observations only.
+        jacobian_block_offset++;
+      } else {
+        jacobians_o[j] = NULL;
+      }
+    }
+}
+} // namespace internal
 }  // namespace ceres

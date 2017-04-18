@@ -49,7 +49,8 @@ class BlockEvaluatePreparer {
   // Using Init() instead of a constructor allows for allocating this structure
   // with new[]. This is because C++ doesn't allow passing arguments to objects
   // constructed with new[] (as opposed to plain 'new').
-  void Init(int const* const* jacobian_layout,
+  void Init(int const* const* jacobian_layout_p,
+            int const* const* jacobian_layout_o,
             int max_derivatives_per_residual_block);
 
   // EvaluatePreparer interface
@@ -57,13 +58,18 @@ class BlockEvaluatePreparer {
   // Point the jacobian blocks directly into the block sparse matrix, if
   // jacobian is non-null. Otherwise, uses an internal per-thread buffer to
   // store the jacobians temporarily.
-  void Prepare(const ResidualBlock* residual_block,
+  void Prepare_p(const ResidualBlock* residual_block,
                int residual_block_index,
-               SparseMatrix* jacobian,
-               double** jacobians);
+               SparseMatrix* jacobian_p,
+               double** jacobians_p);
 
+  void Prepare_o(const ResidualBlock* residual_block,
+               int residual_block_index,
+               SparseMatrix* jacobian_o,
+               double** jacobians_o);
  private:
-  int const* const* jacobian_layout_;
+  int const* const* jacobian_layout_p_;
+  int const* const* jacobian_layout_o_;
 
   // For the case that the overall jacobian is not available, but the
   // individual jacobians are requested, use a pass-through scratch evaluate

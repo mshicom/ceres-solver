@@ -48,7 +48,7 @@ using std::pair;
 using std::vector;
 using std::adjacent_find;
 
-void CompressedRowJacobianWriter::PopulateJacobianRowAndColumnBlockVectors(
+void CompressedRowJacobianWriter::PopulateJacobianRowAndColumnBlockVectors_p(
     const Program* program, CompressedRowSparseMatrix* jacobian) {
   const vector<ParameterBlock*>& parameter_blocks =
       program->parameter_blocks();
@@ -56,6 +56,25 @@ void CompressedRowJacobianWriter::PopulateJacobianRowAndColumnBlockVectors(
   col_blocks.resize(parameter_blocks.size());
   for (int i = 0; i < parameter_blocks.size(); ++i) {
     col_blocks[i] = parameter_blocks[i]->LocalSize();
+  }
+
+  const vector<ResidualBlock*>& residual_blocks =
+      program->residual_blocks();
+  vector<int>& row_blocks = *(jacobian->mutable_row_blocks());
+  row_blocks.resize(residual_blocks.size());
+  for (int i = 0; i < residual_blocks.size(); ++i) {
+    row_blocks[i] = residual_blocks[i]->NumResiduals();
+  }
+}
+
+void CompressedRowJacobianWriter::PopulateJacobianRowAndColumnBlockVectors_o(
+    const Program* program, CompressedRowSparseMatrix* jacobian) {
+  const vector<ObservationBlock*>& observation_blocks =
+      program->observation_blocks();
+  vector<int>& col_blocks = *(jacobian->mutable_col_blocks());
+  col_blocks.resize(observation_blocks.size());
+  for (int i = 0; i < observation_blocks.size(); ++i) {
+    col_blocks[i] = observation_blocks[i]->LocalSize();
   }
 
   const vector<ResidualBlock*>& residual_blocks =
@@ -85,8 +104,26 @@ void CompressedRowJacobianWriter::GetOrderedParameterBlocks(
   }
   sort(evaluated_jacobian_blocks->begin(), evaluated_jacobian_blocks->end());
 }
+void CompressedRowJacobianWriter::GetOrderedObservationBlocks(
+      const Program* program,
+      int constraint_id,
+      vector<pair<int, int> >* evaluated_jacobian_blocks) {
+  const ResidualBlock* residual_block =
+      program->residual_blocks()[constraint_id];
+  const int num_observation_blocks = residual_block->NumObservationBlocks();
 
-SparseMatrix* CompressedRowJacobianWriter::CreateJacobian() const {
+  for (int j = 0; j < num_observation_blocks; ++j) {
+    const ObservationBlock* observation_block =
+        residual_block->observation_blocks()[j];
+    if (!observation_block->IsConstant()) {
+      evaluated_jacobian_blocks->push_back(
+          make_pair(observation_block->index(), j));
+    }
+  }
+  sort(evaluated_jacobian_blocks->begin(), evaluated_jacobian_blocks->end());
+}
+
+SparseMatrix* CompressedRowJacobianWriter::CreateJacobian_p() const {
   const vector<ResidualBlock*>& residual_blocks =
       program_->residual_blocks();
 
@@ -187,15 +224,121 @@ SparseMatrix* CompressedRowJacobianWriter::CreateJacobian() const {
   }
   CHECK_EQ(num_jacobian_nonzeros, rows[total_num_residuals]);
 
-  PopulateJacobianRowAndColumnBlockVectors(program_, jacobian);
+  PopulateJacobianRowAndColumnBlockVectors_p(program_, jacobian);
 
   return jacobian;
 }
 
-void CompressedRowJacobianWriter::Write(int residual_id,
-                                        int residual_offset,
-                                        double **jacobians,
-                                        SparseMatrix* base_jacobian) {
+SparseMatrix* CompressedRowJacobianWriter::CreateJacobian_o() const {
+  const vector<ResidualBlock*>& residual_blocks =
+      program_->residual_blocks();
+
+  int total_num_residuals = program_->NumResiduals();
+  int total_num_effective_observations = program_->NumEffectiveObservations();
+
+  // Count the number of jacobian nonzeros.
+  int num_jacobian_nonzeros = 0;
+  for (int i = 0; i < residual_blocks.size(); ++i) {
+    ResidualBlock* residual_block = residual_blocks[i];
+    const int num_residuals = residual_block->NumResiduals();
+    const int num_observation_blocks = residual_block->NumObservationBlocks();
+    for (int j = 0; j < num_observation_blocks; ++j) {
+      ObservationBlock* observation_block = residual_block->observation_blocks()[j];
+      if (!observation_block->IsConstant()) {
+        num_jacobian_nonzeros += num_residuals * observation_block->LocalSize();
+      }
+    }
+  }
+
+  // Allocate storage for the jacobian with some extra space at the end.
+  // Allocate more space than needed to store the jacobian so that when the LM
+  // algorithm adds the diagonal, no reallocation is necessary. This reduces
+  // peak memory usage significantly.
+  CompressedRowSparseMatrix* jacobian =
+      new CompressedRowSparseMatrix(
+          total_num_residuals,
+          total_num_effective_observations,
+          num_jacobian_nonzeros + total_num_effective_observations);
+
+  // At this stage, the CompressedRowSparseMatrix is an invalid state. But this
+  // seems to be the only way to construct it without doing a memory copy.
+  int* rows = jacobian->mutable_rows();
+  int* cols = jacobian->mutable_cols();
+  int row_pos = 0;
+  rows[0] = 0;
+  for (int i = 0; i < residual_blocks.size(); ++i) {
+    const ResidualBlock* residual_block = residual_blocks[i];
+    const int num_observation_blocks = residual_block->NumObservationBlocks();
+
+    // Count the number of derivatives for a row of this constraint block and
+    // build a list of active observation block indices.
+    int num_derivatives = 0;
+    vector<int> observation_indices;
+    for (int j = 0; j < num_observation_blocks; ++j) {
+      ObservationBlock* observation_block = residual_block->observation_blocks()[j];
+      if (!observation_block->IsConstant()) {
+        observation_indices.push_back(observation_block->index());
+        num_derivatives += observation_block->LocalSize();
+      }
+    }
+
+    // Sort the observations by their position in the state vector.
+    sort(observation_indices.begin(), observation_indices.end());
+    if (adjacent_find(observation_indices.begin(), observation_indices.end()) !=
+        observation_indices.end()) {
+      std::string observation_block_description;
+      for (int j = 0; j < num_observation_blocks; ++j) {
+        ObservationBlock* observation_block = residual_block->observation_blocks()[j];
+        observation_block_description +=
+            observation_block->ToString() + "\n";
+      }
+      LOG(FATAL) << "Ceres internal error: "
+                 << "Duplicate observation blocks detected in a cost function. "
+                 << "This should never happen. Please report this to "
+                 << "the Ceres developers.\n"
+                 << "constraint Block: " << residual_block->ToString() << "\n"
+                 << "observation Blocks: " << observation_block_description;
+    }
+
+    // Update the row indices.
+    const int num_residuals = residual_block->NumResiduals();
+    for (int j = 0; j < num_residuals; ++j) {
+      rows[row_pos + j + 1] = rows[row_pos + j] + num_derivatives;
+    }
+
+    // Iterate over observation blocks in the order which they occur in the
+    // observation vector. This code mirrors that in Write(), where jacobian
+    // values are updated.
+    int col_pos = 0;
+    for (int j = 0; j < observation_indices.size(); ++j) {
+      ObservationBlock* observation_block =
+          program_->observation_blocks()[observation_indices[j]];
+      const int observation_block_size = observation_block->LocalSize();
+
+      for (int r = 0; r < num_residuals; ++r) {
+        // This is the position in the values array of the jacobian where this
+        // row of the jacobian block should go.
+        const int column_block_begin = rows[row_pos + r] + col_pos;
+
+        for (int c = 0; c < observation_block_size; ++c) {
+          cols[column_block_begin + c] = observation_block->delta_offset() + c;
+        }
+      }
+      col_pos += observation_block_size;
+    }
+    row_pos += num_residuals;
+  }
+  CHECK_EQ(num_jacobian_nonzeros, rows[total_num_residuals]);
+
+  PopulateJacobianRowAndColumnBlockVectors_o(program_, jacobian);
+
+  return jacobian;
+}
+
+void CompressedRowJacobianWriter::Write_p(int residual_id,
+                                          int residual_offset,
+                                          double **jacobians,
+                                          SparseMatrix* base_jacobian) {
   CompressedRowSparseMatrix* jacobian =
       down_cast<CompressedRowSparseMatrix*>(base_jacobian);
 
@@ -236,6 +379,53 @@ void CompressedRowJacobianWriter::Write(int residual_id,
                 column_block_begin);
     }
     col_pos += parameter_block_size;
+  }
+}
+
+void CompressedRowJacobianWriter::Write_o(int constraint_id,
+                                          int constraint_offset,
+                                          double **jacobians,
+                                          SparseMatrix* base_jacobian) {
+  CompressedRowSparseMatrix* jacobian =
+      down_cast<CompressedRowSparseMatrix*>(base_jacobian);
+
+  double* jacobian_values = jacobian->mutable_values();
+  const int* jacobian_rows = jacobian->rows();
+
+  const ResidualBlock* residual_block =
+      program_->residual_blocks()[constraint_id];
+  const int num_residuals = residual_block->NumResiduals();
+
+  vector<pair<int, int> > evaluated_jacobian_blocks;
+  GetOrderedObservationBlocks(program_, constraint_id, &evaluated_jacobian_blocks);
+
+  // Where in the current row does the jacobian for a observation block begin.
+  int col_pos = 0;
+
+  // Iterate over the jacobian blocks in increasing order of their
+  // positions in the reduced observation vector.
+  for (int i = 0; i < evaluated_jacobian_blocks.size(); ++i) {
+    const ObservationBlock* observation_block =
+        program_->observation_blocks()[evaluated_jacobian_blocks[i].first];
+    const int argument = evaluated_jacobian_blocks[i].second;
+    const int observation_block_size = observation_block->LocalSize();
+
+    // Copy one row of the jacobian block at a time.
+    for (int r = 0; r < num_residuals; ++r) {
+      // Position of the r^th row of the current jacobian block.
+      const double* block_row_begin =
+          jacobians[argument] + r * observation_block_size;
+
+      // Position in the values array of the jacobian where this
+      // row of the jacobian block should go.
+      double* column_block_begin =
+          jacobian_values + jacobian_rows[constraint_offset + r] + col_pos;
+
+      std::copy(block_row_begin,
+                block_row_begin + observation_block_size,
+                column_block_begin);
+    }
+    col_pos += observation_block_size;
   }
 }
 

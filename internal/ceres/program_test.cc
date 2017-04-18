@@ -91,13 +91,15 @@ TEST(Program, RemoveFixedBlocksNothingConstant) {
   problem.AddResidualBlock(new BinaryCostFunction(), NULL, &x, &y);
   problem.AddResidualBlock(new TernaryCostFunction(), NULL, &x, &y, &z);
 
-  vector<double*> removed_parameter_blocks;
+  vector<double*> removed_parameter_blocks,removed_observation_blocks;
+
   double fixed_cost = 0.0;
   string message;
   scoped_ptr<Program> reduced_program(
       CHECK_NOTNULL(problem
                     .program()
                     .CreateReducedProgram(&removed_parameter_blocks,
+                                          &removed_observation_blocks,
                                           &fixed_cost,
                                           &message)));
 
@@ -115,13 +117,14 @@ TEST(Program, RemoveFixedBlocksAllParameterBlocksConstant) {
   problem.AddResidualBlock(new UnaryCostFunction(), NULL, &x);
   problem.SetParameterBlockConstant(&x);
 
-  vector<double*> removed_parameter_blocks;
+  vector<double*> removed_parameter_blocks,removed_observation_blocks;
   double fixed_cost = 0.0;
   string message;
   scoped_ptr<Program> reduced_program(
       CHECK_NOTNULL(problem
                     .program()
                     .CreateReducedProgram(&removed_parameter_blocks,
+                                          &removed_observation_blocks,
                                           &fixed_cost,
                                           &message)));
   EXPECT_EQ(reduced_program->NumParameterBlocks(), 0);
@@ -142,13 +145,14 @@ TEST(Program, RemoveFixedBlocksNoResidualBlocks) {
   problem.AddParameterBlock(&y, 1);
   problem.AddParameterBlock(&z, 1);
 
-  vector<double*> removed_parameter_blocks;
+  vector<double*> removed_parameter_blocks,removed_observation_blocks;
   double fixed_cost = 0.0;
   string message;
   scoped_ptr<Program> reduced_program(
       CHECK_NOTNULL(problem
                     .program()
                     .CreateReducedProgram(&removed_parameter_blocks,
+                                          &removed_observation_blocks,
                                           &fixed_cost,
                                           &message)));
   EXPECT_EQ(reduced_program->NumParameterBlocks(), 0);
@@ -171,13 +175,14 @@ TEST(Program, RemoveFixedBlocksOneParameterBlockConstant) {
   problem.AddResidualBlock(new BinaryCostFunction(), NULL, &x, &y);
   problem.SetParameterBlockConstant(&x);
 
-  vector<double*> removed_parameter_blocks;
+  vector<double*> removed_parameter_blocks,removed_observation_blocks;
   double fixed_cost = 0.0;
   string message;
   scoped_ptr<Program> reduced_program(
       CHECK_NOTNULL(problem
                     .program()
                     .CreateReducedProgram(&removed_parameter_blocks,
+                                          &removed_observation_blocks,
                                           &fixed_cost,
                                           &message)));
   EXPECT_EQ(reduced_program->NumParameterBlocks(), 1);
@@ -198,13 +203,14 @@ TEST(Program, RemoveFixedBlocksNumEliminateBlocks) {
   problem.AddResidualBlock(new BinaryCostFunction(), NULL, &x, &y);
   problem.SetParameterBlockConstant(&x);
 
-  vector<double*> removed_parameter_blocks;
+  vector<double*> removed_parameter_blocks,removed_observation_blocks;
   double fixed_cost = 0.0;
   string message;
   scoped_ptr<Program> reduced_program(
       CHECK_NOTNULL(problem
                     .program()
                     .CreateReducedProgram(&removed_parameter_blocks,
+                                          &removed_observation_blocks,
                                           &fixed_cost,
                                           &message)));
   EXPECT_EQ(reduced_program->NumParameterBlocks(), 2);
@@ -237,13 +243,14 @@ TEST(Program, RemoveFixedBlocksFixedCost) {
                                    scratch.get());
 
 
-  vector<double*> removed_parameter_blocks;
+  vector<double*> removed_parameter_blocks,removed_observation_blocks;
   double fixed_cost = 0.0;
   string message;
   scoped_ptr<Program> reduced_program(
       CHECK_NOTNULL(problem
                     .program()
                     .CreateReducedProgram(&removed_parameter_blocks,
+                                          &removed_observation_blocks,
                                           &fixed_cost,
                                           &message)));
 

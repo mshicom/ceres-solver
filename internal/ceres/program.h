@@ -40,6 +40,8 @@ namespace ceres {
 namespace internal {
 
 class ParameterBlock;
+class ObservationBlock;
+
 class ProblemImpl;
 class ResidualBlock;
 class TripletSparseMatrix;
@@ -61,8 +63,11 @@ class Program {
 
   // The ordered parameter and residual blocks for the program.
   const std::vector<ParameterBlock*>& parameter_blocks() const;
+  const std::vector<ObservationBlock*>& observation_blocks() const;
   const std::vector<ResidualBlock*>& residual_blocks() const;
+
   std::vector<ParameterBlock*>* mutable_parameter_blocks();
+  std::vector<ObservationBlock*>* mutable_observation_blocks();
   std::vector<ResidualBlock*>* mutable_residual_blocks();
 
   // Serialize to/from the program and update states.
@@ -82,8 +87,17 @@ class Program {
   // parameterizations, this can fail. False is returned on failure.
   bool SetParameterBlockStatePtrsToUserStatePtrs();
 
+  bool StateVectorToObservationBlocks(const double *state);
+  void ObservationBlocksToStateVector(double *state) const;
+  void CopyObservationBlockStateToUserState();
+  bool SetObservationBlockStatePtrsToUserStatePtrs();
+
   // Update a state vector for the program given a delta.
-  bool Plus(const double* state,
+  bool Plus_p(const double* state,
+            const double* delta,
+            double* state_plus_delta) const;
+
+  bool Plus_o(const double* state,
             const double* delta,
             double* state_plus_delta) const;
 
@@ -100,6 +114,7 @@ class Program {
   // This also updates p->state_offset() and p->delta_offset(), which are the
   // position of the parameter in the state and delta vector respectively.
   void SetParameterOffsetsAndIndex();
+  void SetObservationOffsetsAndIndex();
 
   // Check if the internal state of the program (the indexing and the
   // offsets) are correct.
@@ -144,6 +159,7 @@ class Program {
   // pointer and error will contain a human readable description of
   // the problem.
   Program* CreateReducedProgram(std::vector<double*>* removed_parameter_blocks,
+                                std::vector<double*>* removed_observation_blocks,
                                 double* fixed_cost,
                                 std::string* error) const;
 
@@ -151,12 +167,16 @@ class Program {
   int NumParameterBlocks() const;
   int NumParameters() const;
   int NumEffectiveParameters() const;
+  int NumObservationBlocks() const;
+  int NumObservations() const;
+  int NumEffectiveObservations() const;
   int NumResidualBlocks() const;
   int NumResiduals() const;
 
   int MaxScratchDoublesNeededForEvaluate() const;
   int MaxDerivativesPerResidualBlock() const;
   int MaxParametersPerResidualBlock() const;
+  int MaxObservationsPerResidualBlock() const;
   int MaxResidualsPerResidualBlock() const;
 
   // A human-readable dump of the parameter blocks for debugging.
@@ -176,11 +196,13 @@ class Program {
   // If there was a problem, then the function will return false and
   // error will contain a human readable description of the problem.
   bool RemoveFixedBlocks(std::vector<double*>* removed_parameter_blocks,
+                         std::vector<double*>* removed_observation_blocks,
                          double* fixed_cost,
                          std::string* message);
 
   // The Program does not own the ParameterBlock or ResidualBlock objects.
   std::vector<ParameterBlock*> parameter_blocks_;
+  std::vector<ObservationBlock*> observation_blocks_;
   std::vector<ResidualBlock*> residual_blocks_;
 
   friend class ProblemImpl;

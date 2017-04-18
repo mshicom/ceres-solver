@@ -61,18 +61,22 @@ class DynamicCompressedRowJacobianWriter {
   // Return a `DynamicCompressedRowSparseMatrix` which is filled by
   // `Write`. Note that `Finalize` must be called to make the
   // `CompressedRowSparseMatrix` interface valid.
-  SparseMatrix* CreateJacobian() const;
+  SparseMatrix* CreateJacobian_p() const;
+  SparseMatrix* CreateJacobian_o() const;
 
   // Write only the non-zero jacobian entries for a residual block
   // (specified by `residual_id`) into `base_jacobian`, starting at the row
   // specifed by `residual_offset`.
   //
   // This method is thread-safe over residual blocks (each `residual_id`).
-  void Write(int residual_id,
+  void Write_p(int residual_id,
              int residual_offset,
              double **jacobians,
              SparseMatrix* base_jacobian);
-
+  void Write_o(int residual_id,
+             int residual_offset,
+             double **jacobians,
+             SparseMatrix* base_jacobian);
  private:
   Program* program_;
 };

@@ -60,16 +60,20 @@ class BlockJacobianWriter {
   // This makes the final Write() a nop.
   BlockEvaluatePreparer* CreateEvaluatePreparers(int num_threads);
 
-  SparseMatrix* CreateJacobian() const;
+  SparseMatrix* CreateJacobian_p() const;
+  SparseMatrix* CreateJacobian_o() const;
 
-  void Write(int /* residual_id */,
+  // This is a noop since the blocks were written directly into their final
+  // position by the outside evaluate call, thanks to the jacobians array
+  // prepared by the BlockEvaluatePreparers.
+  void Write_p(int /* residual_id */,
              int /* residual_offset */,
              double** /* jacobians */,
-             SparseMatrix* /* jacobian */) {
-    // This is a noop since the blocks were written directly into their final
-    // position by the outside evaluate call, thanks to the jacobians array
-    // prepared by the BlockEvaluatePreparers.
-  }
+             SparseMatrix* /* jacobian */) { }
+  void Write_o(int /* residual_id */,
+             int /* residual_offset */,
+             double** /* jacobians */,
+             SparseMatrix* /* jacobian */) { }
 
  private:
   Program* program_;
@@ -115,10 +119,12 @@ class BlockJacobianWriter {
   //
   // which indicates that dr/dx is located at values_[0], and dr/dz is at
   // values_[12]. See BlockEvaluatePreparer::Prepare()'s comments about 'j'.
-  std::vector<int*> jacobian_layout_;
+  std::vector<int*> jacobian_layout_p_;
+  std::vector<int*> jacobian_layout_o_;
 
   // The pointers in jacobian_layout_ point directly into this vector.
-  std::vector<int> jacobian_layout_storage_;
+  std::vector<int> jacobian_layout_storage_p_;
+  std::vector<int> jacobian_layout_storage_o_;
 };
 
 }  // namespace internal

@@ -49,6 +49,7 @@
 
 namespace ceres {
 
+class RelationFunction;
 class CostFunction;
 class LossFunction;
 class LocalParameterization;
@@ -59,6 +60,7 @@ namespace internal {
 class Preprocessor;
 class ProblemImpl;
 class ParameterBlock;
+class ObservationBlock;
 class ResidualBlock;
 }  // namespace internal
 
@@ -215,6 +217,12 @@ class CERES_EXPORT Problem {
       CostFunction* cost_function,
       LossFunction* loss_function,
       const std::vector<double*>& parameter_blocks);
+
+  ResidualBlockId AddResidualBlock(
+      RelationFunction* constraint_function,
+      LossFunction* loss_function,
+      const std::vector<double*>& parameter_blocks,
+      const std::vector<double*>& observation_blocks);
 
   // Convenience methods for adding residuals with a small number of
   // parameters. This is the common case. Instead of specifying the
@@ -395,8 +403,7 @@ class CERES_EXPORT Problem {
   struct EvaluateOptions {
     EvaluateOptions()
         : apply_loss_function(true),
-          num_threads(1) {
-    }
+          num_threads(1) { }
 
     // The set of parameter blocks for which evaluation should be
     // performed. This vector determines the order that parameter
@@ -413,6 +420,7 @@ class CERES_EXPORT Problem {
     // block should NOT point to new memory locations. Bad things will
     // happen otherwise.
     std::vector<double*> parameter_blocks;
+    std::vector<double*> observation_blocks;
 
     // The set of residual blocks to evaluate. This vector determines
     // the order in which the residuals occur, and how the rows of the

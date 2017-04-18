@@ -96,6 +96,8 @@
 #include "ceres/program.h"
 #include "ceres/residual_block.h"
 #include "ceres/small_blas.h"
+#include "ceres/sparse_matrix.h"
+#include "ceres/evaluator.h"
 
 namespace ceres {
 namespace internal {
@@ -131,24 +133,31 @@ class ProgramEvaluator : public Evaluator {
   }
 
   // Implementation of Evaluator interface.
-  SparseMatrix* CreateJacobian() const {
-    return jacobian_writer_.CreateJacobian();
+  SparseMatrix* CreateJacobian_p() const {
+    return jacobian_writer_.CreateJacobian_p();
+  }
+
+  SparseMatrix* CreateJacobian_o() const {
+    return jacobian_writer_.CreateJacobian_o();
   }
 
   bool Evaluate(const Evaluator::EvaluateOptions& evaluate_options,
-                const double* state,
+                const double* state_p,
+                const double* state_o,
                 double* cost,
                 double* residuals,
-                double* gradient,
-                SparseMatrix* jacobian) {
+                double* gradient_p,
+                double* gradient_o,
+                SparseMatrix* jacobian_p, SparseMatrix* jacobian_o) {
     ScopedExecutionTimer total_timer("Evaluator::Total", &execution_summary_);
-    ScopedExecutionTimer call_type_timer(gradient == NULL && jacobian == NULL
+    ScopedExecutionTimer call_type_timer(gradient_p == NULL && jacobian_p == NULL
                                          ? "Evaluator::Residual"
                                          : "Evaluator::Jacobian",
                                          &execution_summary_);
 
     // The parameters are stateful, so set the state before evaluating.
-    if (!program_->StateVectorToParameterBlocks(state)) {
+    if (!program_->StateVectorToParameterBlocks(state_p) ||
+        !program_->StateVectorToObservationBlocks(state_o) ) {
       return false;
     }
 
@@ -156,16 +165,23 @@ class ProgramEvaluator : public Evaluator {
       VectorRef(residuals, program_->NumResiduals()).setZero();
     }
 
-    if (jacobian != NULL) {
-      jacobian->SetZero();
+    if (jacobian_p != NULL) {
+      jacobian_p->SetZero();
+    }
+    if (jacobian_o != NULL) {
+      jacobian_o->SetZero();
     }
 
     // Each thread gets it's own cost and evaluate scratch space.
     for (int i = 0; i < options_.num_threads; ++i) {
       evaluate_scratch_[i].cost = 0.0;
-      if (gradient != NULL) {
-        VectorRef(evaluate_scratch_[i].gradient.get(),
+      if (gradient_p != NULL) {
+        VectorRef(evaluate_scratch_[i].gradient_p.get(),
                   program_->NumEffectiveParameters()).setZero();
+      }
+      if (gradient_o != NULL) {
+        VectorRef(evaluate_scratch_[i].gradient_o.get(),
+                  program_->NumEffectiveObservations()).setZero();
       }
     }
 
@@ -193,20 +209,28 @@ class ProgramEvaluator : public Evaluator {
       // Prepare block residuals if requested.
       const ResidualBlock* residual_block = program_->residual_blocks()[i];
       double* block_residuals = NULL;
-      if (residuals != NULL) {
+      if (residuals != NULL) {  // for the calculation of gradient_p
         block_residuals = residuals + residual_layout_[i];
-      } else if (gradient != NULL) {
+      } else if (gradient_p != NULL) {
         block_residuals = scratch->residual_block_residuals.get();
-      }
+      } // else block_residuals = NULL;
 
       // Prepare block jacobians if requested.
-      double** block_jacobians = NULL;
-      if (jacobian != NULL || gradient != NULL) {
-        preparer->Prepare(residual_block,
+      double** block_jacobians_p = NULL;
+      if (jacobian_p != NULL || gradient_p != NULL) {
+        preparer->Prepare_p(residual_block,
                           i,
-                          jacobian,
-                          scratch->jacobian_block_ptrs.get());
-        block_jacobians = scratch->jacobian_block_ptrs.get();
+                          jacobian_p,
+                          scratch->jacobian_p_block_ptrs.get());
+        block_jacobians_p = scratch->jacobian_p_block_ptrs.get();
+      }
+      double** block_jacobians_o = NULL;
+      if (jacobian_o != NULL || gradient_o != NULL) {
+        preparer->Prepare_o(residual_block,
+                          i,
+                          jacobian_o,
+                          scratch->jacobian_o_block_ptrs.get());
+        block_jacobians_o = scratch->jacobian_o_block_ptrs.get();
       }
 
       // Evaluate the cost, residuals, and jacobians.
@@ -215,7 +239,7 @@ class ProgramEvaluator : public Evaluator {
               evaluate_options.apply_loss_function,
               &block_cost,
               block_residuals,
-              block_jacobians,
+              block_jacobians_p, block_jacobians_o,
               scratch->residual_block_evaluate_scratch.get())) {
         abort = true;
 // This ensures that the OpenMP threads have a consistent view of 'abort'. Do
@@ -228,15 +252,21 @@ class ProgramEvaluator : public Evaluator {
       scratch->cost += block_cost;
 
       // Store the jacobians, if they were requested.
-      if (jacobian != NULL) {
-        jacobian_writer_.Write(i,
+      if (jacobian_p != NULL) {
+        jacobian_writer_.Write_p(i,
                                residual_layout_[i],
-                               block_jacobians,
-                               jacobian);
+                               block_jacobians_p,
+                               jacobian_p);
+      }
+      if (jacobian_o != NULL) {
+        jacobian_writer_.Write_o(i,
+                               residual_layout_[i],
+                               block_jacobians_o,
+                               jacobian_o);
       }
 
       // Compute and store the gradient, if it was requested.
-      if (gradient != NULL) {
+      if (gradient_p != NULL) {
         int num_residuals = residual_block->NumResiduals();
         int num_parameter_blocks = residual_block->NumParameterBlocks();
         for (int j = 0; j < num_parameter_blocks; ++j) {
@@ -247,28 +277,57 @@ class ProgramEvaluator : public Evaluator {
           }
 
           MatrixTransposeVectorMultiply<Eigen::Dynamic, Eigen::Dynamic, 1>(
-              block_jacobians[j],
-              num_residuals,
-              parameter_block->LocalSize(),
-              block_residuals,
-              scratch->gradient.get() + parameter_block->delta_offset());
+              block_jacobians_p[j],         // a.src
+              num_residuals,                // a.rows
+              parameter_block->LocalSize(), // b.cols
+              block_residuals,              // b.src
+              scratch->gradient_p.get() + parameter_block->delta_offset()  // c.src
+           );
+        }
+      }
+      if (gradient_o != NULL) {
+        int num_residuals = residual_block->NumResiduals();
+        int num_observation_blocks = residual_block->NumObservationBlocks();
+        for (int j = 0; j < num_observation_blocks; ++j) {
+          const ObservationBlock* observation_block =
+              residual_block->observation_blocks()[j];
+          if (observation_block->IsConstant()) {
+            continue;
+          }
+
+          MatrixTransposeVectorMultiply<Eigen::Dynamic, Eigen::Dynamic, 1>(
+              block_jacobians_o[j],         // a.src
+              num_residuals,                // a.rows
+              observation_block->LocalSize(), // b.cols
+              block_residuals,              // b.src
+              scratch->gradient_o.get() + observation_block->delta_offset()  // c.src
+          );
         }
       }
     }
 
     if (!abort) {
       const int num_parameters = program_->NumEffectiveParameters();
+      const int num_observations = program_->NumEffectiveObservations();
 
       // Sum the cost and gradient (if requested) from each thread.
       (*cost) = 0.0;
-      if (gradient != NULL) {
-        VectorRef(gradient, num_parameters).setZero();
+      if (gradient_p != NULL) {
+        VectorRef(gradient_p, num_parameters).setZero();
       }
+      if (gradient_o != NULL) {
+        VectorRef(gradient_o, num_observations).setZero();
+      }
+
       for (int i = 0; i < options_.num_threads; ++i) {
         (*cost) += evaluate_scratch_[i].cost;
-        if (gradient != NULL) {
-          VectorRef(gradient, num_parameters) +=
-              VectorRef(evaluate_scratch_[i].gradient.get(), num_parameters);
+        if (gradient_p != NULL) {
+          VectorRef(gradient_p, num_parameters) +=
+              VectorRef(evaluate_scratch_[i].gradient_p.get(), num_parameters);
+        }
+        if (gradient_o != NULL) {
+          VectorRef(gradient_o, num_observations) +=
+              VectorRef(evaluate_scratch_[i].gradient_o.get(), num_observations);
         }
       }
 
@@ -276,18 +335,29 @@ class ProgramEvaluator : public Evaluator {
       // `num_parameters` is passed to the finalizer so that additional
       // storage can be reserved for additional diagonal elements if
       // necessary.
-      if (jacobian != NULL) {
+      if (jacobian_p != NULL) {
         JacobianFinalizer f;
-        f(jacobian, num_parameters);
+        f(jacobian_p, num_parameters);
       }
+      if (jacobian_o != NULL) {
+        JacobianFinalizer f;
+        f(jacobian_o, num_observations);
+      }
+
     }
     return !abort;
   }
 
-  bool Plus(const double* state,
+  bool Plus_p(const double* state,
             const double* delta,
             double* state_plus_delta) const {
-    return program_->Plus(state, delta, state_plus_delta);
+    return program_->Plus_p(state, delta, state_plus_delta);
+  }
+
+  bool Plus_o(const double* state,
+            const double* delta,
+            double* state_plus_delta) const {
+    return program_->Plus_o(state, delta, state_plus_delta);
   }
 
   int NumParameters() const {
@@ -295,6 +365,13 @@ class ProgramEvaluator : public Evaluator {
   }
   int NumEffectiveParameters() const {
     return program_->NumEffectiveParameters();
+  }
+
+  int NumObservations() const {
+    return program_->NumObservations();
+  }
+  int NumEffectiveObservations() const {
+    return program_->NumEffectiveObservations();
   }
 
   int NumResiduals() const {
@@ -313,26 +390,37 @@ class ProgramEvaluator : public Evaluator {
   // Per-thread scratch space needed to evaluate and store each residual block.
   struct EvaluateScratch {
     void Init(int max_parameters_per_residual_block,
+              int max_observations_per_residual_block,
               int max_scratch_doubles_needed_for_evaluate,
               int max_residuals_per_residual_block,
-              int num_parameters) {
+              int num_parameters, int num_observations) {
       residual_block_evaluate_scratch.reset(
           new double[max_scratch_doubles_needed_for_evaluate]);
-      gradient.reset(new double[num_parameters]);
-      VectorRef(gradient.get(), num_parameters).setZero();
+      gradient_p.reset(new double[num_parameters]);
+      VectorRef(gradient_p.get(), num_parameters).setZero();
+
+      gradient_o.reset(new double[num_observations]);
+      VectorRef(gradient_o.get(), num_observations).setZero();
+
       residual_block_residuals.reset(
           new double[max_residuals_per_residual_block]);
-      jacobian_block_ptrs.reset(
+      jacobian_p_block_ptrs.reset(
           new double*[max_parameters_per_residual_block]);
+      jacobian_o_block_ptrs.reset(
+          new double*[max_observations_per_residual_block]);
     }
 
     double cost;
     scoped_array<double> residual_block_evaluate_scratch;
     // The gradient in the local parameterization.
-    scoped_array<double> gradient;
-    // Enough space to store the residual for the largest residual block.
+    scoped_array<double> gradient_p;
+    scoped_array<double> gradient_o;
+
+    // Enough space to store the constraint for the largest constraint block.
     scoped_array<double> residual_block_residuals;
-    scoped_array<double*> jacobian_block_ptrs;
+    scoped_array<double*> jacobian_p_block_ptrs;
+    scoped_array<double*> jacobian_o_block_ptrs;
+
   };
 
   static void BuildResidualLayout(const Program& program,
@@ -353,18 +441,23 @@ class ProgramEvaluator : public Evaluator {
                                                  int num_threads) {
     int max_parameters_per_residual_block =
         program.MaxParametersPerResidualBlock();
+    int max_observations_per_residual_block =
+        program.MaxObservationsPerResidualBlock();
     int max_scratch_doubles_needed_for_evaluate =
         program.MaxScratchDoublesNeededForEvaluate();
     int max_residuals_per_residual_block =
         program.MaxResidualsPerResidualBlock();
-    int num_parameters = program.NumEffectiveParameters();
+    int num_parameters   = program.NumEffectiveParameters();
+    int num_observations = program.NumEffectiveObservations();
+
 
     EvaluateScratch* evaluate_scratch = new EvaluateScratch[num_threads];
     for (int i = 0; i < num_threads; i++) {
       evaluate_scratch[i].Init(max_parameters_per_residual_block,
+                               max_observations_per_residual_block,
                                max_scratch_doubles_needed_for_evaluate,
                                max_residuals_per_residual_block,
-                               num_parameters);
+                               num_parameters, num_observations);
     }
     return evaluate_scratch;
   }
